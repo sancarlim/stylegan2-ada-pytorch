@@ -68,7 +68,7 @@ def open_image_folder(source_dir, *, max_images: Optional[int]):
     def iterate_images():
         for idx, fname in enumerate(input_images):
             arch_fname = os.path.relpath(fname, source_dir)
-            arch_fname = arch_fname.replace('\\', '/')
+            arch_fname = arch_fname.replace('\\', '/').replace('.png','')
             img = np.array(PIL.Image.open(fname))
             yield dict(img=img, label=labels.get(arch_fname))
             if idx >= max_idx-1:
@@ -420,7 +420,7 @@ def convert_dataset(
             if dataset_attrs['channels'] not in [1, 3]:
                 error('Input images must be stored as RGB or grayscale')
             if width != 2 ** int(np.floor(np.log2(width))):
-                error('Image width/height after scale and crop are required to be power-of-two')
+                error(f'Image width/height after scale and crop are required to be power-of-two. Got {width}x{height}')
         elif dataset_attrs != cur_image_attrs:
             err = [f'  dataset {k}/cur image {k}: {dataset_attrs[k]}/{cur_image_attrs[k]}' for k in dataset_attrs.keys()]
             error(f'Image {archive_fname} attributes must be equal across all images of the dataset.  Got:\n' + '\n'.join(err))
