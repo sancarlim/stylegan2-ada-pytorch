@@ -1,4 +1,6 @@
 __pycache__/
 .cache/
-/training_runs/
+/training_runs*
 .github/ISSUE_TEMPLATE/bug_report.md
+/generated*
+/lightning_logs

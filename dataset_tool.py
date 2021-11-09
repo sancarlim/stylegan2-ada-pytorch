@@ -54,7 +54,7 @@ def open_image_folder(source_dir, *, max_images: Optional[int]):
 
     # Load labels.
     labels = {}
-    meta_fname = os.path.join(source_dir, 'dataset.json')
+    meta_fname = os.path.join(source_dir, 'labels.json')
     if os.path.isfile(meta_fname):
         with open(meta_fname, 'r') as file:
             labels = json.load(file)['labels']
