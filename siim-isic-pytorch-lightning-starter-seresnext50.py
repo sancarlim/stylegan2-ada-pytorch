@@ -47,6 +47,7 @@ import torch.nn as nn
 import torchvision.models as models
 from torchvision import transforms
 
+import json
 
 # In[2]:
 
@@ -88,28 +89,14 @@ def dict_to_args(d):
 # In[77]:
 
 
-CSV_DIR = Path('./melanoma_dataset/')
+CSV_DIR = Path('/media/14TBDISK/sandra/test_isic')
 train_df = pd.read_csv(CSV_DIR/'train.csv')
 test_df = pd.read_csv(CSV_DIR/'test.csv')
 #IMAGE_DIR = Path('/kaggle/input/siim-isic-melanoma-classification/jpeg')  # Use this when training with original images
-IMAGE_DIR = Path(CSV_DIR/'images224/')
+IMAGE_DIR = Path(CSV_DIR)
 #frames=[train_df, test_df]
 #joint_df = pd.concat(frames)
 
-
-# In[78]:
-
-
-train_df.head()
-
-
-# In[81]:
-
-
-len(train_df)
-
-
-# In[84]:
 
 
 labels_list = []
@@ -122,21 +109,8 @@ for n in range(len(train_df)):
 
 labels_list_dict = { "labels" : labels_list}
 
-import json
 with open("labels.json", "w") as outfile:
     json.dump(labels_list_dict, outfile)
-
-
-# In[ ]:
-
-
-train_df.groupby(by=['patient_id'])['image_name'].count()
-
-
-# In[ ]:
-
-
-train_df.groupby(by=['patient_id'])['target'].mean()
 
 
 # So you have patients that have multiple images. Also apparently the data is imbalanced. Let's verify:
@@ -148,8 +122,6 @@ train_df.groupby(['target']).count()
 
 
 # so we have approx 60 times more negatives than positives. We need to make sure we split good/bad patients equally.
-
-# In[ ]:
 
 
 patient_means = train_df.groupby(['patient_id'])['target'].mean()
@@ -163,20 +135,6 @@ patient_ids = train_df['patient_id'].unique()
 train_idx, val_idx = train_test_split(np.arange(len(patient_ids)), stratify=(patient_means > 0), test_size=0.2)  # KFold + averaging should be much better considering how small the dataset is for malignant cases
 pid_train = patient_ids[train_idx]
 pid_val = patient_ids[val_idx]
-
-
-# Let's verify the split was correct
-
-# In[ ]:
-
-
-train_df[train_df['patient_id'].isin(pid_train)].groupby(['target']).count()
-
-
-# In[ ]:
-
-
-train_df[train_df['patient_id'].isin(pid_val)].groupby(['target']).count()
 
 
 # ## Pytorch Dataset
@@ -296,7 +254,7 @@ class FocalLoss(nn.Module):
 
 class LightModel(pl.LightningModule):
 
-    def __init__(self, df_train, df_test, pid_train, pid_val, hparams):
+    def __init__(self, df_train, df_test, pid_train, pid_val):
         # This is where paths and options should be stored. I also store the
         # train_idx, val_idx for cross validation since the dataset are defined 
         # in the module !
@@ -307,7 +265,6 @@ class LightModel(pl.LightningModule):
 
         self.model = Model(arch=hparams.arch)  # You will obviously want to make the model better :)
 
-        self.hparams = hparams
         
         # Defining datasets here instead of in prepare_data usually solves a lot of problems for me...
         self.transform_train = transforms.Compose([#transforms.Resize((224, 224)),   # Use this when training with original images
@@ -334,18 +291,18 @@ class LightModel(pl.LightningModule):
 
     def train_dataloader(self):
         # Simply define a pytorch dataloader here that will take care of batching. Note it works well with dictionnaries !
-        train_dl = tdata.DataLoader(self.trainset, batch_size=self.hparams.batch_size, shuffle=True,
+        train_dl = tdata.DataLoader(self.trainset, batch_size=hparams.batch_size, shuffle=True,
                                     num_workers=os.cpu_count())
         return train_dl
 
     def val_dataloader(self):
         # Same but for validation. Pytorch lightning allows multiple validation dataloaders hence why I return a list.
-        val_dl = tdata.DataLoader(self.valset, batch_size=self.hparams.batch_size, shuffle=False,
+        val_dl = tdata.DataLoader(self.valset, batch_size=hparams.batch_size, shuffle=False,
                                   num_workers=os.cpu_count()) 
         return [val_dl]
     
     def test_dataloader(self):
-        test_dl = tdata.DataLoader(self.testset, batch_size=self.hparams.batch_size, shuffle=False,
+        test_dl = tdata.DataLoader(self.testset, batch_size=hparams.batch_size, shuffle=False,
                                   num_workers=os.cpu_count()) 
         return [test_dl]
     
@@ -360,9 +317,9 @@ class LightModel(pl.LightningModule):
 
     def configure_optimizers(self):
         # Optimizers and schedulers. Note that each are in lists of equal length to allow multiple optimizers (for GAN for example)
-        optimizer = torch.optim.Adam(self.model.parameters(), lr=self.hparams.lr, weight_decay=3e-6)
-        scheduler = torch.optim.lr_scheduler.OneCycleLR(optimizer, max_lr=10 * self.hparams.lr, 
-                                                        epochs=self.hparams.epochs, steps_per_epoch=len(self.train_dataloader()))
+        optimizer = torch.optim.Adam(self.model.parameters(), lr=hparams.lr, weight_decay=3e-6)
+        scheduler = torch.optim.lr_scheduler.OneCycleLR(optimizer, max_lr=10 * hparams.lr, 
+                                                        epochs=hparams.epochs, steps_per_epoch=len(self.train_dataloader()))
         return [optimizer], [scheduler]
 
     def training_step(self, batch, batch_idx):
@@ -432,7 +389,7 @@ hparams = dict_to_args({'batch_size': 64,
 
 
 # Initiate model
-model = LightModel(train_df, test_df, pid_train, pid_val, hparams)
+model = LightModel(train_df, test_df, pid_train, pid_val)
 tb_logger = pl.loggers.TensorBoardLogger(save_dir='./',
                                          name=f'baseline', # This will create different subfolders for your models
                                          version=f'0')  # If you use KFold you can specify here the fold number like f'fold_{fold+1}'
