@@ -1,42 +1,11 @@
-#!/usr/bin/env python
-# coding: utf-8
-
-# Note: The io with original images is awful. Therefore I created a dataset https://www.kaggle.com/arroqc/siic-isic-224x224-images of images preprocessed to 224x224 size and saved in png (lossless).
-# If you train on original jpeg large imagesm I have put the right lines of code in comments with the added comments : # Use this when training with original images
-
-# # Pytorch Lightning Starter - SSIM Melanoma competition
-# 
-# I use pytorch lightning both for this competition and in my day to day work. I hope it can serve as a useful tutorial for fellow kagglers.
-# Why use Pytorch-Lightning ?
-# 
-# Pytorch lighntning is designed to help you easily follow a pytorch based training loop and ease modifications that you may want. Want to use a new scheduler ? Then simply modify the configure_optimizer method ! The beauty of it is that it automates all the boring stuff that clogs a pure pytorch code. All these loops, .zero_grad(), .eval(), torch.save etc. are gone and handled by the framework. You just have to focus on the ML part of it. The best things for researchers is that it comes with automated logs through tensorboard to compare your many experiments and easy switches between GPU, DataParallel, TPU mixed precision etc. Obviously kaggle is not very friendly with logs so I suggest reproducing the code of this kernel in a local environment and use tensorboard there.
-# 
-# You may ask why not simply use fastai. This is now a matter of preference. Fastai automates a lot of stuff with best practices like .fit_one_cycle. But on the other hand unless you have a lot of experience with it I find it rather opaque in what is happening behind the scenes. It's a framework designed to go with doing the fastai course so that you understand the options. If like me you learnt deep learning in a more academic environment in pure pytorch or pure tensorflow then you may find fastai hard to understand without listening to J. Howard courses. Similarly as soon as you want to do something a bit different it can become hard to understand how to change anything. On a personal note, I'll wait for the fastai v2 course before delving into it.
-# 
-
-# In[ ]:
-
-
-
-
-
-# 
-# ## Loading data
-# 
-# First let's open the csv. One thing we need to make sure when splitting data in a medical context is to split by patient ID rather than image ID. Otherwise you run the risk of having some data leakage.
-# 
-
-# In[1]:
-
-
 import os
 import random
 import argparse
 from pathlib import Path
 import PIL.Image as Image
 import pandas as pd
-import numpy as np
-import cv2
+import numpy as np 
+from argparse import ArgumentParser, Namespace
 from sklearn.metrics import roc_auc_score
 from sklearn.model_selection import train_test_split
 
@@ -47,10 +16,8 @@ import torch.nn as nn
 import torchvision.models as models
 from torchvision import transforms
 
+import torch.nn.functional as F
 import json
-
-# In[2]:
-
 
 # Reproductibility
 SEED = 33
@@ -62,8 +29,6 @@ torch.cuda.manual_seed(SEED)
 torch.backends.cudnn.deterministic = True
 torch.backends.cudnn.benchmark = False
 
-
-# In[3]:
 
 
 def dict_to_args(d):
@@ -86,63 +51,6 @@ def dict_to_args(d):
     return args
 
 
-# In[77]:
-
-
-CSV_DIR = Path('/media/14TBDISK/sandra/test_isic')
-train_df = pd.read_csv(CSV_DIR/'train.csv')
-test_df = pd.read_csv(CSV_DIR/'test.csv')
-#IMAGE_DIR = Path('/kaggle/input/siim-isic-melanoma-classification/jpeg')  # Use this when training with original images
-IMAGE_DIR = Path(CSV_DIR)
-#frames=[train_df, test_df]
-#joint_df = pd.concat(frames)
-
-
-
-labels_list = []
-for n in range(len(train_df)):
-    labels_list.append([train_df.iloc[n].image_name,int(train_df.iloc[n].target)])
-
-
-# In[86]:
-
-
-labels_list_dict = { "labels" : labels_list}
-
-with open("labels.json", "w") as outfile:
-    json.dump(labels_list_dict, outfile)
-
-
-# So you have patients that have multiple images. Also apparently the data is imbalanced. Let's verify:
-
-# In[ ]:
-
-
-train_df.groupby(['target']).count()
-
-
-# so we have approx 60 times more negatives than positives. We need to make sure we split good/bad patients equally.
-
-
-patient_means = train_df.groupby(['patient_id'])['target'].mean()
-patient_ids = train_df['patient_id'].unique()
-
-
-# In[ ]:
-
-
-# Now let's make our split
-train_idx, val_idx = train_test_split(np.arange(len(patient_ids)), stratify=(patient_means > 0), test_size=0.2)  # KFold + averaging should be much better considering how small the dataset is for malignant cases
-pid_train = patient_ids[train_idx]
-pid_val = patient_ids[val_idx]
-
-
-# ## Pytorch Dataset
-#  A dataset should simply return all the information necessary for a sample by defining the getitem and len magic methods.
-
-# In[ ]:
-
-
 class SIIMDataset(tdata.Dataset):
     
     def __init__(self, df, transform, test=False):
@@ -158,9 +66,9 @@ class SIIMDataset(tdata.Dataset):
         #image_fn = meta['image_name'] + '.jpg'  # Use this when training with original images
         image_fn = meta['image_name'] + '.png'
         if self.test:
-            img = Image.open(str(IMAGE_DIR / ('test/' + image_fn)))
+            img = Image.open(str(IMAGE_DIR / ('test_224/' + image_fn)))
         else:
-            img = Image.open(str(IMAGE_DIR / ('train/' + image_fn)))
+            img = Image.open(str(IMAGE_DIR / ('train_224/' + image_fn)))
         
         if self.transform is not None:
             img = self.transform(img)
@@ -169,11 +77,6 @@ class SIIMDataset(tdata.Dataset):
             return {'image': img}
         else:
             return {'image': img, 'target': meta['target']}
-
-
-# ## Model
-
-# In[ ]:
 
 
 class AdaptiveConcatPool2d(nn.Module):
@@ -200,6 +103,9 @@ class Model(nn.Module):
         if arch == 'resnet34':
             remove_range = 2
             m = models.resnet34(pretrained=True)
+        elif arch == 'eficientnet':
+            remove_range = 2
+            m = models.efficientnet_b6(pretrained=True)
         elif arch == 'seresnext50':
             m = torch.hub.load('facebookresearch/semi-supervised-ImageNet1K-models', 'resnext50_32x4d_ssl')
             remove_range = 2
@@ -217,16 +123,6 @@ class Model(nn.Module):
         return logits
 
 
-# 
-# ## Pytorch Lightning module definition
-# 
-# In a normal pytorch code you probably would instantiate the model, dataloaders and make a nested for loop for epochs and batches. Pytorch lightning automates the engineering parts like the loops so that you focus on the ML part. To do that you create a pytorch lightning model and then define every ML step inside of it. To help you understand I have added comments under every method you need to implement.
-# 
-
-# In[ ]:
-
-
-import torch.nn.functional as F
 class FocalLoss(nn.Module):
     def __init__(self, alpha=1, gamma=2, logits=False, reduce=True):
         super(FocalLoss, self).__init__()
@@ -248,10 +144,7 @@ class FocalLoss(nn.Module):
         else:
             return F_loss
 
-
-# In[ ]:
-
-
+ 
 class LightModel(pl.LightningModule):
 
     def __init__(self, df_train, df_test, pid_train, pid_val):
@@ -365,84 +258,88 @@ class LightModel(pl.LightningModule):
         return {'dummy_item': 0}
 
 
-# 
-# ## Training
-# 
-# Let's start by specifying parameters, the seed and output folder.
-# 
+CSV_DIR = Path('/media/14TBDISK/sandra/test_isic')
+train_df = pd.read_csv(CSV_DIR/'train.csv')
+test_df = pd.read_csv(CSV_DIR/'test.csv') 
+IMAGE_DIR = Path(CSV_DIR)
+#frames=[train_df, test_df]
+#joint_df = pd.concat(frames) 
 
-# In[ ]:
+""" 
+labels_list = []
+for n in range(len(train_df)):
+    labels_list.append([train_df.iloc[n].image_name,int(train_df.iloc[n].target)])
+labels_list_dict = { "labels" : labels_list}
+
+with open("labels.json", "w") as outfile:
+    json.dump(labels_list_dict, outfile) """
 
 
-# dict_to_args is a simple helper to make hparams act like args from argparse. This makes it trivial to then use argparse
+# So you have patients that have multiple images. Also apparently the data is imbalanced. Let's verify:
+#train_df.groupby(['target']).count()
+# so we have approx 60 times more negatives than positives. We need to make sure we split good/bad patients equally.
+
+patient_means = train_df.groupby(['patient_id'])['target'].mean()
+patient_ids = train_df['patient_id'].unique()
+
+# Now let's make our split
+train_idx, val_idx = train_test_split(np.arange(len(patient_ids)), stratify=(patient_means > 0), test_size=0.2)  # KFold + averaging should be much better considering how small the dataset is for malignant cases
+pid_train = patient_ids[train_idx]
+pid_val = patient_ids[val_idx]
+
+# dict_to_args is a simple helper to make args act like args from argparse. This makes it trivial to then use argparse
 OUTPUT_DIR = './lightning_logs'
-hparams = dict_to_args({'batch_size': 64,
-                        'lr': 1e-4, # common when using pretrained
-                        'epochs': 10,
-                        'arch': 'seresnext50'
-                       })
 
 
 # For training we just need to instantiate the pytorch lightning module and a trainer with a few options. Most importantly this is where you specify how many GPU to use (or TPU) and if you want to do mixed precision training (with apex). For the purpose of this kernel I just do FP32 1GPU training but please read the pytorch lightning doc if you want to try TPU and/or mixed precision.
 
-# In[ ]:
 
 
-# Initiate model
-model = LightModel(train_df, test_df, pid_train, pid_val)
-tb_logger = pl.loggers.TensorBoardLogger(save_dir='./',
-                                         name=f'baseline', # This will create different subfolders for your models
-                                         version=f'0')  # If you use KFold you can specify here the fold number like f'fold_{fold+1}'
-checkpoint_callback = pl.callbacks.ModelCheckpoint(filename=tb_logger.log_dir + "/{epoch:02d}-{auc:.4f}",
-                                                   monitor='auc', mode='max')
-# Define trainer
-# Here you can 
-trainer = pl.Trainer(max_epochs=hparams.epochs, auto_lr_find=False,  # Usually the auto is pretty bad. You should instead plot and pick manually.
-                     gradient_clip_val=1,
-                     num_sanity_val_steps=0,  # Comment that out to reactivate sanity but the ROC will fail if the sample has only class 0
-                     checkpoint_callback=checkpoint_callback,
-                     gpus=1,
-                     progress_bar_refresh_rate=0
-                     )
+def main(args: Namespace):
+    # Initiate model
+    model = LightModel(train_df, test_df, pid_train, pid_val)
+    tb_logger = pl.loggers.TensorBoardLogger(save_dir='./',
+                                            name=f'baseline', # This will create different subfolders for your models
+                                            version=f'0')  # If you use KFold you can specify here the fold number like f'fold_{fold+1}'
+    checkpoint_callback = pl.callbacks.ModelCheckpoint(filename=tb_logger.log_dir + "/{epoch:02d}-{auc:.4f}",
+                                                    monitor='auc', mode='max')
+    # Define trainer 
+    trainer = pl.Trainer(max_epochs=args.epochs, auto_lr_find=False,  # Usually the auto is pretty bad. You should instead plot and pick manually.
+                        gradient_clip_val=1,
+                        num_sanity_val_steps=0,  # Comment that out to reactivate sanity but the ROC will fail if the sample has only class 0
+                        checkpoint_callback=checkpoint_callback,
+                        gpus=1,
+                        progress_bar_refresh_rate=0
+                        )
+
+    print('TRAINING STARTING...')
+    trainer.fit(model)
+    print('TRAINING FINISHED')
+
+    # Grab best checkpoint file
+    out = Path(tb_logger.log_dir)
+    aucs = [ckpt.stem[-4:] for ckpt in out.iterdir()]
+    best_auc_idx = aucs.index(max(aucs))
+    best_ckpt = list(out.iterdir())[best_auc_idx]
+    print('TEST: Using ', best_ckpt)
+
+    trainer = pl.Trainer(resume_from_checkpoint=str(best_ckpt), gpus=1)
+    trainer.test(model)
 
 
-# In[ ]:
+    preds = model.test_predicts
+    test_df['target'] = preds
+    submission = test_df[['image_name', 'target']]
+    submission.to_csv('submission.csv', index=False)
+    
 
+if __name__ == '__main__':
+    parser = ArgumentParser()
+    parser.add_argument("--epochs", type=int, default=10, help='Number of training epochs')
+    parser.add_argument("--batch_size", type=int, default=64)
+    parser.add_argument("--lr", type=int, default=1e-4)
+    parser.add_argument("--arch", type=str, default='seresnext50', help='Choose architecture',
+                            choices=['seresnext50', 'resnet34', 'efficientnet' ])
+    hparams = parser.parse_args()
 
-trainer.fit(model)
-
-
-# ## Test time
-# The easy part :)
-
-# In[ ]:
-
-
-# Grab best checkpoint file
-out = Path(tb_logger.log_dir)
-aucs = [ckpt.stem[-4:] for ckpt in out.iterdir()]
-best_auc_idx = aucs.index(max(aucs))
-best_ckpt = list(out.iterdir())[best_auc_idx]
-print('Using ', best_ckpt)
-
-
-# In[ ]:
-
-
-trainer = pl.Trainer(resume_from_checkpoint=str(best_ckpt), gpus=1)
-
-
-# In[ ]:
-
-
-trainer.test(model)
-
-
-# In[ ]:
-
-
-preds = model.test_predicts
-test_df['target'] = preds
-submission = test_df[['image_name', 'target']]
-submission.to_csv('submission.csv', index=False)
-
+    main(hparams)
