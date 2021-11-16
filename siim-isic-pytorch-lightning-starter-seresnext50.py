@@ -67,7 +67,7 @@ class SIIMDataset(tdata.Dataset):
     def __getitem__(self, idx):
         meta = self.df.iloc[idx]
         #image_fn = meta['image_name'] + '.jpg'  # Use this when training with original images
-        image_fn = meta['image_name'] + '.png'
+        image_fn = meta['image_name'] + '.jpg'
         if self.test:
             img = Image.open(str(IMAGE_DIR / ('test_224/' + image_fn)))
         else:
@@ -81,9 +81,11 @@ class SIIMDataset(tdata.Dataset):
         else:
             return {'image': img, 'target': meta['target']}
 
+
+
 class Synth_Dataset(tdata.Dataset):
     
-    def __init__(self, transform, test=False):
+    def __init__(self, transform, test=True):
         self.transform = transform
         self.test = test 
         
@@ -93,7 +95,7 @@ class Synth_Dataset(tdata.Dataset):
     def __getitem__(self, idx):
         meta = self.df.iloc[idx]
         #image_fn = meta['image_name'] + '.jpg'  # Use this when training with original images
-        image_fn = 'seed' + f'{idx:04d}' + '.png'
+        image_fn = 'seed' + f'{idx:04d}' + '.jpg'
         if self.test:
             img = Image.open(str(IMAGE_DIR / ('test_224/' + image_fn)))
         else:

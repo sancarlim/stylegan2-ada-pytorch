@@ -68,7 +68,7 @@ def open_image_folder(source_dir, *, max_images: Optional[int]):
     def iterate_images():
         for idx, fname in enumerate(input_images):
             arch_fname = os.path.relpath(fname, source_dir)
-            arch_fname = arch_fname.replace('\\', '/').replace('.png','')
+            arch_fname = arch_fname.replace('\\', '/').replace('.jpg','')
             img = np.array(PIL.Image.open(fname))
             yield dict(img=img, label=labels.get(arch_fname))
             if idx >= max_idx-1:
@@ -394,7 +394,7 @@ def convert_dataset(
     labels = []
     for idx, image in tqdm(enumerate(input_iter), total=num_files):
         idx_str = f'{idx:08d}'
-        archive_fname = f'{idx_str[:5]}/img{idx_str}.png'
+        archive_fname = f'{idx_str[:5]}/img{idx_str}.jpg'
 
         # Apply crop and resize.
         img = transform_image(image['img'])
@@ -428,7 +428,7 @@ def convert_dataset(
         # Save the image as an uncompressed PNG.
         img = PIL.Image.fromarray(img, { 1: 'L', 3: 'RGB' }[channels])
         image_bits = io.BytesIO()
-        img.save(image_bits, format='png', compress_level=0, optimize=False)
+        img.save(image_bits, format='jpg', compress_level=0, optimize=False)
         save_bytes(os.path.join(archive_root_dir, archive_fname), image_bits.getbuffer())
         labels.append([archive_fname, image['label']] if image['label'] is not None else None)
 
