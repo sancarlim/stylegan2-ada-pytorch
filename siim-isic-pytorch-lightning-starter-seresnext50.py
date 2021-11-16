@@ -14,9 +14,12 @@ import torch.utils.data as tdata
 import torch
 import torch.nn as nn
 import torchvision.models as models
+from torchsummary import summary
 from torchvision import transforms
 
 import torch.nn.functional as F
+
+from efficientnet_pytorch import EfficientNet
 import json
 
 # Reproductibility
@@ -78,6 +81,32 @@ class SIIMDataset(tdata.Dataset):
         else:
             return {'image': img, 'target': meta['target']}
 
+class Synth_Dataset(tdata.Dataset):
+    
+    def __init__(self, transform, test=False):
+        self.transform = transform
+        self.test = test 
+        
+    def __len__(self):
+        return len(self.df)
+        
+    def __getitem__(self, idx):
+        meta = self.df.iloc[idx]
+        #image_fn = meta['image_name'] + '.jpg'  # Use this when training with original images
+        image_fn = 'seed' + f'{idx:04d}' + '.png'
+        if self.test:
+            img = Image.open(str(IMAGE_DIR / ('test_224/' + image_fn)))
+        else:
+            img = Image.open(str(IMAGE_DIR / ('train_224/' + image_fn)))
+        
+        if self.transform is not None:
+            img = self.transform(img)
+        
+        if self.test:
+            return {'image': img}
+        else:
+            return {'image': img, 'target': meta['target']}
+
 
 class AdaptiveConcatPool2d(nn.Module):
     def __init__(self):
@@ -99,27 +128,34 @@ class Flatten(nn.Module):
 class Model(nn.Module):
     
     def __init__(self, c_out=1, arch='resnet34'):
-        super().__init__()
+        super().__init__() 
+        self.arch = arch
         if arch == 'resnet34':
             remove_range = 2
             m = models.resnet34(pretrained=True)
-        elif arch == 'eficientnet':
-            remove_range = 2
-            m = models.efficientnet_b6(pretrained=True)
+            #fc = nn.Linear(in_features=512, out_features=500, bias=True)
+        elif arch == 'efficientnet': 
+            m = EfficientNet.from_pretrained("efficientnet-b6")
+            m._fc = nn.Linear(in_features=2304, out_features=500, bias=True)
+            self.base = m
+            self.head = nn.Linear(500, 1)
+            #fc = nn.Linear(in_features=1280, out_features=500, bias=True)
         elif arch == 'seresnext50':
             m = torch.hub.load('facebookresearch/semi-supervised-ImageNet1K-models', 'resnext50_32x4d_ssl')
+            #fc = nn.Linear(in_features=512, out_features=500, bias=True)
             remove_range = 2
             
-        c_feature = list(m.children())[-1].in_features
-        self.base = nn.Sequential(*list(m.children())[:-remove_range])
-        self.head = nn.Sequential(AdaptiveConcatPool2d(),
+        if arch != 'efficientnet':
+            c_feature = list(m.children())[-1].in_features
+            self.base = nn.Sequential(*list(m.children())[:-remove_range])
+            self.head = nn.Sequential(AdaptiveConcatPool2d(),
                                   Flatten(),
                                   nn.Linear(c_feature * 2, c_out))
 
         
     def forward(self, x):
         h = self.base(x)
-        logits = self.head(h).squeeze(1)
+        logits = self.head(h).squeeze(1)  
         return logits
 
 
@@ -202,10 +238,12 @@ class LightModel(pl.LightningModule):
 
     def loss_function(self, logits, gt):
         # How to calculate the loss. Note this method is actually not a part of pytorch lightning ! It's only good practice
-        #loss_fn = nn.BCEWithLogitsLoss(pos_weight=torch.tensor([32542/584]).to(logits.device))  # Let's rebalance the weights for each class here.
-        loss_fn = FocalLoss(logits=True)
-        gt = gt.float()
-        loss = loss_fn(logits, gt)
+        if self.loss == 'bce':
+            loss_fn = nn.BCEWithLogitsLoss(pos_weight=torch.tensor([32542/584]).to(logits.device))  # Let's rebalance the weights for each class here.
+        elif self.loss == 'focal':
+            loss_fn = FocalLoss(logits=True)
+            gt = gt.float()
+            loss = loss_fn(logits, gt)
         return loss
 
     def configure_optimizers(self):
@@ -213,6 +251,7 @@ class LightModel(pl.LightningModule):
         optimizer = torch.optim.Adam(self.model.parameters(), lr=hparams.lr, weight_decay=3e-6)
         scheduler = torch.optim.lr_scheduler.OneCycleLR(optimizer, max_lr=10 * hparams.lr, 
                                                         epochs=hparams.epochs, steps_per_epoch=len(self.train_dataloader()))
+                    # torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer=optimizer, mode='max', patience=1, verbose=True, factor=0.2)
         return [optimizer], [scheduler]
 
     def training_step(self, batch, batch_idx):
@@ -331,15 +370,17 @@ def main(args: Namespace):
     test_df['target'] = preds
     submission = test_df[['image_name', 'target']]
     submission.to_csv('submission.csv', index=False)
-    
+
 
 if __name__ == '__main__':
     parser = ArgumentParser()
     parser.add_argument("--epochs", type=int, default=10, help='Number of training epochs')
     parser.add_argument("--batch_size", type=int, default=64)
-    parser.add_argument("--lr", type=int, default=1e-4)
-    parser.add_argument("--arch", type=str, default='seresnext50', help='Choose architecture',
+    parser.add_argument("--lr", type=float, default=1e-4)
+    parser.add_argument("--arch", type=str, default='efficientnet', help='Choose architecture',
                             choices=['seresnext50', 'resnet34', 'efficientnet' ])
+    parser.add_argument("--loss", type=str, default='focal', help='Choose loss function',
+                            choices=['bce', 'focal'])
     hparams = parser.parse_args()
 
     main(hparams)
