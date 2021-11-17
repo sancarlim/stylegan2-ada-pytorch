@@ -88,26 +88,22 @@ class Synth_Dataset(tdata.Dataset):
     def __init__(self, transform, test=True):
         self.transform = transform
         self.test = test 
-        
+        self.input_images = [str(f) for f in sorted(Path(source_dir).rglob('*')) if os.path.isfile(f)]
+
     def __len__(self):
-        return len(self.df)
+        return len(self.input_images)
         
-    def __getitem__(self, idx):
-        meta = self.df.iloc[idx]
-        #image_fn = meta['image_name'] + '.jpg'  # Use this when training with original images
-        image_fn = 'seed' + f'{idx:04d}' + '.jpg'
-        if self.test:
-            img = Image.open(str(IMAGE_DIR / ('test_224/' + image_fn)))
-        else:
-            img = Image.open(str(IMAGE_DIR / ('train_224/' + image_fn)))
+    def __getitem__(self, idx): 
+        #class 0 - bening , class_1 - malign
+        image_fn = self.input_images[idx]   #f'{idx:04d}_{idx%2}'
+
+        img = Image.open(str(source_dir / image_fn))
+        target = int(image_fn.split('_')[1].replace('.png','')) 
         
         if self.transform is not None:
             img = self.transform(img)
         
-        if self.test:
-            return {'image': img}
-        else:
-            return {'image': img, 'target': meta['target']}
+        return {'image': img, 'target':target}
 
 
 class AdaptiveConcatPool2d(nn.Module):
@@ -303,6 +299,7 @@ CSV_DIR = Path('/media/14TBDISK/sandra/test_isic')
 train_df = pd.read_csv(CSV_DIR/'train.csv')
 test_df = pd.read_csv(CSV_DIR/'test.csv') 
 IMAGE_DIR = Path(CSV_DIR)
+source_dir = '/home/sandra/PROGRAMAS/stylegan2-ada-pytorch/training_runs_256/00000--cond-mirror-auto4/generated'
 #frames=[train_df, test_df]
 #joint_df = pd.concat(frames) 
 
