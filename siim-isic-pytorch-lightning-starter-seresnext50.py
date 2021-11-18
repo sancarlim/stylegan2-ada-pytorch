@@ -98,11 +98,11 @@ class Synth_Dataset(tdata.Dataset):
         image_fn = self.input_images[idx]   #f'{idx:04d}_{idx%2}'
 
         img = Image.open(str(source_dir / image_fn))
-        target = int(image_fn.split('_')[1].replace('.png','')) 
+        target = int(image_fn.split('seed')[1].replace('.jpg','')) > 2500  #class 1 seeds=2501-5000
         
         if self.transform is not None:
             img = self.transform(img)
-        
+
         return {'image': img, 'target':target}
 
 
@@ -270,7 +270,15 @@ class LightModel(pl.LightningModule):
     def test_step(self, batch, batch_idx):
         logits = self(batch)
         probs = torch.sigmoid(logits)
-        return {'probs': probs}
+
+        _, predicted = torch.max(probs, 1)
+        self.total += labels.size(0)
+        self.correct += (predicted == batch['target']).sum().item()
+        print('Accuracy of the network on the test images: %d %%' % (
+                100 * self.correct / self.total))
+
+        loss = self.loss_function(logits, batch['target']).unsqueeze(0) 
+        return {'prediction': predicted, 'probs': probs, 'gt': batch['target']}
 
     def validation_epoch_end(self, outputs):
         # This is what happens at the end of validation epoch. Usually gathering all predictions
@@ -289,14 +297,28 @@ class LightModel(pl.LightningModule):
     
     def test_epoch_end(self, outputs):
         probs = torch.cat([out['probs'] for out in outputs], dim=0)
+        gt = torch.cat([out['gt'] for out in outputs], dim=0)
+        predicted = torch.cat([out['predicted'] for out in outputs], dim=0)
         probs = probs.detach().cpu().numpy()
+        gt = gt.detach().cpu().numpy()
+        predicted = predicted.detach().cpu().numpy()
+
+        total = gt.size(0)
+        correct = (predicted == gt).sum().item()
+
+        print('Accuracy of the network on the test images: %d %%' % ( 100 * correct / total))
+
         self.test_predicts = probs  # Save prediction internally for easy access
+
+        auc_roc = torch.tensor(roc_auc_score(gt, probs))
+        print(f'auc: {auc_roc:.4f}')
         # We need to return something 
-        return {'dummy_item': 0}
+        return {'acc': ( 100 * correct / total), 'auc': auc_roc}
 
 
-CSV_DIR = Path('/media/14TBDISK/sandra/test_isic')
-train_df = pd.read_csv(CSV_DIR/'train.csv')
+training_dir = Path('/home/Data/melanoma_external_256')
+train_df = pd.read_csv(training_dir/'train_concat.csv')
+test_synth_dir = Path('./generated')
 test_df = pd.read_csv(CSV_DIR/'test.csv') 
 IMAGE_DIR = Path(CSV_DIR)
 source_dir = '/home/sandra/PROGRAMAS/stylegan2-ada-pytorch/training_runs_256/00000--cond-mirror-auto4/generated'
