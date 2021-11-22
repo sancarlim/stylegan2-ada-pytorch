@@ -319,9 +319,9 @@ class LightModel(pl.LightningModule):
 training_dir = Path('/home/Data/melanoma_external_256')
 train_df = pd.read_csv(training_dir/'train_concat.csv')
 test_synth_dir = Path('./generated')
-test_df = pd.read_csv(CSV_DIR/'test.csv') 
-IMAGE_DIR = Path(CSV_DIR)
-source_dir = '/home/sandra/PROGRAMAS/stylegan2-ada-pytorch/training_runs_256/00000--cond-mirror-auto4/generated'
+test_df = pd.read_csv(training_dir/'test.csv') 
+IMAGE_DIR = Path(training_dir)
+source_dir = '/home/stylegan2-ada-pytorch/generated'
 #frames=[train_df, test_df]
 #joint_df = pd.concat(frames) 
 
@@ -339,11 +339,13 @@ with open("labels.json", "w") as outfile:
 #train_df.groupby(['target']).count()
 # so we have approx 60 times more negatives than positives. We need to make sure we split good/bad patients equally.
 
-patient_means = train_df.groupby(['patient_id'])['target'].mean()
-patient_ids = train_df['patient_id'].unique()
+df = pd.read_csv('/kaggle/input/melanoma-external-malignant-256/train_concat.csv')
+#patient_means = train_df.groupby(['patient_id'])['target'].mean()
+#patient_ids = train_df['patient_id'].unique()
 
 # Now let's make our split
-train_idx, val_idx = train_test_split(np.arange(len(patient_ids)), stratify=(patient_means > 0), test_size=0.2)  # KFold + averaging should be much better considering how small the dataset is for malignant cases
+train_idx, val_idx = train_test_split(df, stratify=df.target, test_size = 0.2, random_state=42)    
+                    #train_test_split(np.arange(len(patient_ids)), stratify=(patient_means > 0), test_size=0.2)  # KFold + averaging should be much better considering how small the dataset is for malignant cases
 pid_train = patient_ids[train_idx]
 pid_val = patient_ids[val_idx]
 
@@ -372,25 +374,30 @@ def main(args: Namespace):
                         progress_bar_refresh_rate=0
                         )
 
-    print('TRAINING STARTING...')
-    trainer.fit(model)
-    print('TRAINING FINISHED')
+    if args.test:
+        trainer = pl.Trainer(resume_from_checkpoint=args.ckpt, gpus=1)
+        trainer.test(model)
 
-    # Grab best checkpoint file
-    out = Path(tb_logger.log_dir)
-    aucs = [ckpt.stem[-4:] for ckpt in out.iterdir()]
-    best_auc_idx = aucs.index(max(aucs))
-    best_ckpt = list(out.iterdir())[best_auc_idx]
-    print('TEST: Using ', best_ckpt)
+    else:
+        print('TRAINING STARTING...')
+        trainer.fit(model)
+        print('TRAINING FINISHED')
 
-    trainer = pl.Trainer(resume_from_checkpoint=str(best_ckpt), gpus=1)
-    trainer.test(model)
+        # Grab best checkpoint file
+        out = Path(tb_logger.log_dir)
+        aucs = [ckpt.stem[-4:] for ckpt in out.iterdir()]
+        best_auc_idx = aucs.index(max(aucs))
+        best_ckpt = list(out.iterdir())[best_auc_idx]
+        print('TEST: Using ', best_ckpt) 
+        trainer = pl.Trainer(resume_from_checkpoint=best_ckpt, gpus=1)
+        
+        trainer.test(model)
 
 
-    preds = model.test_predicts
-    test_df['target'] = preds
-    submission = test_df[['image_name', 'target']]
-    submission.to_csv('submission.csv', index=False)
+        preds = model.test_predicts
+        test_df['target'] = preds
+        submission = test_df[['image_name', 'target']]
+        submission.to_csv('submission.csv', index=False)
 
 
 if __name__ == '__main__':
@@ -398,10 +405,12 @@ if __name__ == '__main__':
     parser.add_argument("--epochs", type=int, default=10, help='Number of training epochs')
     parser.add_argument("--batch_size", type=int, default=64)
     parser.add_argument("--lr", type=float, default=1e-4)
+    parser.add_argument("--test", action='store_true', help='Only testing')
     parser.add_argument("--arch", type=str, default='efficientnet', help='Choose architecture',
                             choices=['seresnext50', 'resnet34', 'efficientnet' ])
     parser.add_argument("--loss", type=str, default='focal', help='Choose loss function',
                             choices=['bce', 'focal'])
+    parser.add_argument("--ckpt", type=str, default='./training_runs/00000--cond-mirror-auto2/epoch=09-auc=0.8981.ckpt', help='CKPT path for testing')
     hparams = parser.parse_args()
 
     main(hparams)
