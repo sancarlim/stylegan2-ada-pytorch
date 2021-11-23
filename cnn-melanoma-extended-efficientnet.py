@@ -50,6 +50,10 @@ def seed_everything(seed_value):
 seed = 1234
 seed_everything(seed)
 
+# Setting up GPU for processing or CPU if GPU isn't available
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+print (device)
+
 
 def process_image(image_path):
     ''' Scales, crops, and normalizes a PIL image for a PyTorch model,
@@ -142,10 +146,6 @@ def predict(image_path, model, topk=1): #just 2 classes from 1 single output
 
     
     return top_probabilities, top_classes
-
-# Setting up GPU for processing or CPU if GPU isn't available
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-print (device)
 
 
 class AdvancedHairAugmentation:
@@ -326,7 +326,7 @@ class Synth_Dataset(Dataset):
         image_fn = self.input_images[idx]   #f'{idx:04d}_{idx%2}'
 
         img = np.array(Image.open(image_fn))
-        target = int( int(image_fn.split('seed')[1].replace('.jpg','')) > 2500 )  #class 1 seeds=2501-5000
+        target = int( int(image_fn.split('seed')[1].replace('.png','')) > 2500 )  #class 1 seeds=2501-5000
         
         if self.transform is not None:
             img = self.transform(img)
@@ -357,10 +357,10 @@ class Net(nn.Module):
         return output
 
 
-df = pd.read_csv('/home/gan_user/Data/melanoma_external_256/train_concat.csv')
-test_df = pd.read_csv('/home/gan_user/Data/melanoma_external_256/test.csv')
-test_img_dir = '/home/gan_user/Data/melanoma_external_256/test/test/'
-train_img_dir = '/home/gan_user/Data/melanoma_external_256/train/train/'
+df = pd.read_csv('/home/Data/melanoma_external_256/train_concat.csv')
+test_df = pd.read_csv('/home/Data/melanoma_external_256/test.csv')
+test_img_dir = '/home/Data/melanoma_external_256/test/test/'
+train_img_dir = '/home/Data/melanoma_external_256/train/train/'
 
 train, valid = train_test_split (df, stratify=df.target, test_size = 0.20, random_state=42) 
 
@@ -411,7 +411,7 @@ validation_dataset = CustomDataset(df = validation_df,
                                    train = True,
                                    transforms = training_transforms )
 
-testing_dataset = Synth_Dataset(source_dir= '/home/gan_user/stylegan2-ada-pytorch/generated',
+testing_dataset = Synth_Dataset(source_dir= '/home/stylegan2-ada-pytorch/generated',
                                 transform = testing_transforms)
 
 train_loader = torch.utils.data.DataLoader(training_dataset, batch_size=32, num_workers=4, shuffle=True)
@@ -459,7 +459,7 @@ scheduler = ReduceLROnPlateau(optimizer=optimizer, mode='max', patience=1, verbo
 
 
 ### TRAINING ###
-
+""" 
 loss_history=[]  
 train_acc_history=[]  
 val_loss_history=[]  
@@ -543,7 +543,7 @@ for e in range(epochs):
         if val_auc_score >= best_val:
             best_val = val_auc_score
             patience = es_patience  # Resetting patience since we have new best validation accuracy
-            model_path = f'/home/gan_user/stylegan2-ada-pytorch/melanoma_model_{best_val}.pth'
+            model_path = f'/home/stylegan2-ada-pytorch/melanoma_model_{best_val}.pth'
             torch.save(model.state_dict(), model_path)  # Saving current best model
             print(f'Saving model in {model_path}')
         else:
@@ -582,14 +582,15 @@ ax2.set_ylabel('Accuracy')
 ax2.legend()
 
 plt.show()  
-plt.imsave(f'/home/gan_user/stylegan2-ada-pytorch/training_ep_{e+1}.png')
+plt.savefig(f'/home/stylegan2-ada-pytorch/training_ep_{e+1}.png')
 
 del training_dataset, validation_dataset, train_loader, validate_loader, images, val_images, val_labels
 gc.collect()
+"""
 
 ### TESTING THE NETWORK ###
 
-model = torch.load(model_path)
+model.load_state_dict(torch.load('/home/stylegan2-ada-pytorch/melanoma_model_0.pth'))
 model.eval()
 model.to(device)
 test_preds=[]
@@ -604,17 +605,18 @@ with torch.no_grad():
         test_pred = torch.sigmoid(test_output)
             
         test_preds.append(test_pred.cpu())
-        all_labels.append(test_pred.cpu())
+        all_labels.append(test_labels.cpu())
         
     test_pred=np.vstack(test_preds).ravel()
     test_pred2 = torch.tensor(test_pred)
-    test_gt = torch.tensor(all_labels)
-    test_accuracy = accuracy_score(all_labels.cpu(), torch.round(test_pred2))
+    test_gt = np.concatenate(all_labels)
+    test_gt2 = torch.tensor(test_gt)
+    test_accuracy = accuracy_score(test_gt2.cpu(), torch.round(test_pred2))
     
 print("Test Accuracy: {}".format(test_accuracy))    
         
-img_nb = 0000
-predict_image_path=f'/home/gan_user/stylegan2-ada-pytorch/generated/seed{img_nb}.png'
+img_nb = '0000'
+predict_image_path=f'/home/stylegan2-ada-pytorch/generated/seed{img_nb}.png'
 
 probs, classes = predict(predict_image_path, model)   
 print(probs)
@@ -637,7 +639,7 @@ plt.title('Confusion Matrix \nAccuracy:{0:.3f}'.format(test_accuracy))
 plt.ylabel('True label')
 plt.xlabel('Predicted label')
 plt.show()
-plt.imsave('/home/gan_user/stylegan2-ada-pytorch/conf_matrix.png')
+plt.savefig('/home/stylegan2-ada-pytorch/conf_matrix.png')
 
 # Display an image along with the diagnosis of melanoma or benign
 
@@ -649,5 +651,6 @@ image = process_image(predict_image_path)
 
 imshow(image, plot_1)
 font = {"color": 'g'} if 'Benign' in classes else {"color": 'r'}
-plot_1.set_title("Diagnosis: {}".format(classes), fontdict=font);
-plt.imsave(f'/home/gan_user/stylegan2-ada-pytorch/prediction_{img_nb}.png')
+
+plot_1.set_title(f"Diagnosis: {classes}, Output (prob) {probs[0]:.4f}", fontdict=font);
+plt.savefig(f'/home/stylegan2-ada-pytorch/prediction_{img_nb}.png')
