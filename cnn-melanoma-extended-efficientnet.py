@@ -363,7 +363,7 @@ class Synth_Dataset(Dataset):
         image_fn = self.input_images[idx]   #f'{idx:04d}_{idx%2}'
 
         img = np.array(Image.open(image_fn))
-        target = int( int(image_fn.split('seed')[1].replace('.png','')) > 2500 )  #class 1 seeds=2501-5000
+        target = int(image_fn.split('_')[1].replace('.png',''))  
         
         if self.transform is not None:
             img = self.transform(img)
@@ -534,8 +534,9 @@ def test(model_path, test_loader):
         test_gt = np.concatenate(all_labels)
         test_gt2 = torch.tensor(test_gt)
         test_accuracy = accuracy_score(test_gt2.cpu(), torch.round(test_pred2))
+        test_auc_score = roc_auc_score(test_gt.cpu(), test_pred)
         
-    print("Test Accuracy: {}".format(test_accuracy))  
+    print("Test Accuracy: {}, ROC_AUC_score: {}".format(test_accuracy, test_auc_score))  
 
     return test_pred, test_gt
 
@@ -547,10 +548,10 @@ test_df = pd.read_csv('/home/Data/melanoma_external_256/test.csv')
 test_img_dir = '/home/Data/melanoma_external_256/test/test/'
 train_img_dir = '/home/Data/melanoma_external_256/train/train/'
 
-train, valid = train_test_split (df, stratify=df.target, test_size = 0.20, random_state=42) 
+train_split, valid_split = train_test_split (df, stratify=df.target, test_size = 0.20, random_state=42) 
 
-train_df=pd.DataFrame(train)
-validation_df=pd.DataFrame(valid)
+train_df=pd.DataFrame(train_split)
+validation_df=pd.DataFrame(valid_split)
 
 print(len(validation_df))
 print(len(train_df))
@@ -621,6 +622,7 @@ total_trainable_params = sum(
     p.numel() for p in model.parameters() if p.requires_grad)
 print(f'{total_trainable_params:,} training parameters.')
 
+""" 
 loss_history, train_acc_history, val_auc_history, val_loss_history = train(model, train_loader, validate_loader, epochs=10, es_patience=3)
 
 fig = plt.figure(figsize=(20, 5))
@@ -643,15 +645,15 @@ ax2.set_ylabel('Accuracy')
 ax2.legend()
 
 plt.show()  
-plt.savefig(f'/home/stylegan2-ada-pytorch/training_ep_{e+1}.png')
+plt.savefig(f'/home/stylegan2-ada-pytorch/training.png')
 
 
 del training_dataset, validation_dataset, train_loader, validate_loader, images, val_images, val_labels
 gc.collect()
 
-
+ """
 ### TESTING THE NETWORK ###
-test_pred, test_gt = test('/home/stylegan2-ada-pytorch/melanoma_model_0.pth', test_loader)  
+test_pred, test_gt = test('/home/stylegan2-ada-pytorch/melanoma_model_0.9847273924494511.pth', test_loader)  
 
 ### CONFUSSION MATRIX ###
 confussion_matrix(test_gt, test_pred)
