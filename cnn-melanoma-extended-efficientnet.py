@@ -148,6 +148,43 @@ def predict(image_path, model, topk=1): #just 2 classes from 1 single output
     return top_probabilities, top_classes
 
 
+def confussion_matrix(test, test_pred):
+    pred = np.round(test_pred)
+    cm = confusion_matrix(test, pred)
+
+    cm_df = pd.DataFrame(cm,
+                        index = ['Benign','Malignant'], 
+                        columns = ['Benign','Malignant'])
+
+    plt.figure(figsize=(5.5,4))
+    sb.heatmap(cm_df, annot=True)
+    plt.title('Confusion Matrix \nAccuracy:{0:.3f}'.format(test_accuracy))
+    plt.ylabel('True label')
+    plt.xlabel('Predicted label')
+    plt.show()
+    plt.savefig('/home/stylegan2-ada-pytorch/conf_matrix.png')
+
+def plot_diagnosis(img_nb):
+
+    predict_image_path=f'/home/stylegan2-ada-pytorch/generated/seed{img_nb}.png'
+
+    probs, classes = predict(predict_image_path, model)   
+    print(probs)
+    print(classes)
+
+    # Display an image along with the diagnosis of melanoma or benign
+    # Plot Skin image input image
+    plt.figure(figsize = (6,10))
+    plot_1 = plt.subplot(2,1,1)
+
+    image = process_image(predict_image_path)
+
+    imshow(image, plot_1)
+    font = {"color": 'g'} if 'Benign' in classes else {"color": 'r'}
+    plot_1.set_title(f"Diagnosis: {classes}, Output (prob) {probs[0]:.4f}", fontdict=font);
+    plt.savefig(f'/home/stylegan2-ada-pytorch/prediction_{img_nb}.png')
+
+
 class AdvancedHairAugmentation:
     """
     Impose an image of a hair to the target image
@@ -357,6 +394,154 @@ class Net(nn.Module):
         return output
 
 
+
+
+
+### TRAINING ###
+def train(model, train_loader, validate_loader, epochs = 10, es_patience = 3):
+    # Training model
+    print('Starts training...')
+
+    best_val = 0
+    criterion = nn.BCEWithLogitsLoss()
+    # Optimizer (gradient descent):
+    optimizer = optim.Adam(model.parameters(), lr=0.0005) 
+    # Scheduler
+    scheduler = ReduceLROnPlateau(optimizer=optimizer, mode='max', patience=1, verbose=True, factor=0.2)
+
+    loss_history=[]  
+    train_acc_history=[]  
+    val_loss_history=[]  
+    val_acc_history=[] 
+    val_auc_history=[]
+        
+    patience = es_patience
+    Total_start_time = time.time()  
+    model.to(device)
+
+    for e in range(epochs):
+        
+        start_time = time.time()
+        correct = 0
+        running_loss = 0
+        model.train()
+        
+        for images, labels in train_loader:
+            
+            images, labels = images.to(device), labels.to(device)
+                
+            optimizer.zero_grad()
+            
+            output = model(images) 
+            loss = criterion(output, labels.view(-1,1))  
+            loss.backward()
+            optimizer.step()
+            
+            # Training loss
+            running_loss += loss.item()
+
+            # Number of correct training predictions and training accuracy
+            train_preds = torch.round(torch.sigmoid(output))
+                
+            correct += (train_preds.cpu() == labels.cpu().unsqueeze(1)).sum().item()
+                            
+        train_acc = correct / len(train_df)
+        
+        val_loss, val_auc_score = val(model, validate_loader, criterion)
+        
+        training_time = str(datetime.timedelta(seconds=time.time() - start_time))[:7]
+            
+        print("Epoch: {}/{}.. ".format(e+1, epochs),
+            "Training Loss: {:.3f}.. ".format(running_loss/len(train_loader)),
+            "Training Accuracy: {:.3f}..".format(train_acc),
+            "Validation Loss: {:.3f}.. ".format(val_loss/len(validate_loader)),
+            #"Validation Accuracy: {:.3f}".format(val_accuracy),
+            "Validation AUC Score: {:.3f}".format(val_auc_score),
+            "Training Time: {}".format( training_time))
+            
+        
+        scheduler.step(val_auc_score)
+                
+        if val_auc_score >= best_val:
+            best_val = val_auc_score
+            patience = es_patience  # Resetting patience since we have new best validation accuracy
+            model_path = f'/home/stylegan2-ada-pytorch/melanoma_model_{best_val}.pth'
+            torch.save(model.state_dict(), model_path)  # Saving current best model
+            print(f'Saving model in {model_path}')
+        else:
+            patience -= 1
+            if patience == 0:
+                print('Early stopping. Best Val roc_auc: {:.3f}'.format(best_val))
+                break
+        
+        loss_history.append(running_loss)  
+        train_acc_history.append(train_acc)    
+        val_loss_history.append(val_loss)  
+        #val_acc_history.append(val_accuracy)
+        val_auc_history.append(val_auc_score)
+
+    total_training_time = str(datetime.timedelta(seconds=time.time() - Total_start_time  ))[:7]                  
+    print("Total Training Time: {}".format(total_training_time))
+
+    return loss_history, train_acc_history, val_auc_history, val_loss_history
+    
+            
+def val(model, validate_loader, criterion):          
+    model.eval()
+    preds=[]            
+    # Turning off gradients for validation, saves memory and computations
+    with torch.no_grad():
+        
+        val_loss = 0
+        val_correct = 0
+    
+        for val_images, val_labels in validate_loader:
+        
+            val_images, val_labels = val_images.to(device), val_labels.to(device)
+        
+            val_output = model(val_images)
+            val_loss += (criterion(val_output, val_labels.view(-1,1))).item() 
+            val_pred = torch.sigmoid(val_output)
+            
+            preds.append(val_pred.cpu())
+        pred=np.vstack(preds).ravel()
+            
+        #val_accuracy = accuracy_score(train_df['target'].values, torch.round(pred2))
+        val_auc_score = roc_auc_score(validation_df['target'].values, pred)
+
+        return val_loss, val_auc_score
+
+def test(model_path, test_loader):
+    model.load_state_dict(torch.load(model_path))
+    model.eval()
+    model.to(device)
+    test_preds=[]
+    all_labels=[]
+    with torch.no_grad():
+        
+        for _, (test_images, test_labels) in enumerate(test_loader):
+            
+            test_images, test_labels = test_images.to(device), test_labels.to(device)
+            
+            test_output = model(test_images)
+            test_pred = torch.sigmoid(test_output)
+                
+            test_preds.append(test_pred.cpu())
+            all_labels.append(test_labels.cpu())
+            
+        test_pred=np.vstack(test_preds).ravel()
+        test_pred2 = torch.tensor(test_pred)
+        test_gt = np.concatenate(all_labels)
+        test_gt2 = torch.tensor(test_gt)
+        test_accuracy = accuracy_score(test_gt2.cpu(), torch.round(test_pred2))
+        
+    print("Test Accuracy: {}".format(test_accuracy))  
+
+    return test_pred, test_gt
+
+
+
+
 df = pd.read_csv('/home/Data/melanoma_external_256/train_concat.csv')
 test_df = pd.read_csv('/home/Data/melanoma_external_256/test.csv')
 test_img_dir = '/home/Data/melanoma_external_256/test/test/'
@@ -436,131 +621,7 @@ total_trainable_params = sum(
     p.numel() for p in model.parameters() if p.requires_grad)
 print(f'{total_trainable_params:,} training parameters.')
 
-# Empty variable to be stored with best validation accuracy
-best_val = 0
-
-# Path and filename to save model to
-model_path = f'melanoma_model_{best_val}.pth'  
-
-# Number of Epochs
-epochs = 10
-
-# Early stopping if no change in accurancy
-es_patience = 3
-
-# Loss Function:
-criterion = nn.BCEWithLogitsLoss()
-
-# Optimizer (gradient descent):
-optimizer = optim.Adam(model.parameters(), lr=0.0005) 
-
-# Scheduler
-scheduler = ReduceLROnPlateau(optimizer=optimizer, mode='max', patience=1, verbose=True, factor=0.2)
-
-
-### TRAINING ###
-""" 
-loss_history=[]  
-train_acc_history=[]  
-val_loss_history=[]  
-val_acc_history=[] 
-val_auc_history=[]
-
-    
-patience = es_patience
-Total_start_time = time.time()  
-model.to(device)
-
-for e in range(epochs):
-    
-    start_time = time.time()
-    correct = 0
-    running_loss = 0
-    model.train()
-    
-    for images, labels in train_loader:
-        
-        
-        images, labels = images.to(device), labels.to(device)
-            
-        
-        optimizer.zero_grad()
-        
-        output = model(images) 
-        loss = criterion(output, labels.view(-1,1))  
-        loss.backward()
-        optimizer.step()
-        
-        # Training loss
-        running_loss += loss.item()
-
-        # Number of correct training predictions and training accuracy
-        train_preds = torch.round(torch.sigmoid(output))
-            
-        correct += (train_preds.cpu() == labels.cpu().unsqueeze(1)).sum().item()
-                        
-    train_acc = correct / len(train_df)
-        
-        
-    #switching to validation:        
-    model.eval()
-    preds=[]            
-    # Turning off gradients for validation, saves memory and computations
-    with torch.no_grad():
-        
-        val_loss = 0
-        val_correct = 0
-    
-        for val_images, val_labels in validate_loader:
-         
-        
-            val_images, val_labels = val_images.to(device), val_labels.to(device)
-
-        
-            val_output = model(val_images)
-            val_loss += (criterion(val_output, val_labels.view(-1,1))).item() 
-            val_pred = torch.sigmoid(val_output)
-            
-            preds.append(val_pred.cpu())
-        pred=np.vstack(preds).ravel()
-           
-        #val_accuracy = accuracy_score(train_df['target'].values, torch.round(pred2))
-        val_auc_score = roc_auc_score(validation_df['target'].values, pred)
-            
-        training_time = str(datetime.timedelta(seconds=time.time() - start_time))[:7]
-            
-        print("Epoch: {}/{}.. ".format(e+1, epochs),
-              "Training Loss: {:.3f}.. ".format(running_loss/len(train_loader)),
-              "Training Accuracy: {:.3f}..".format(train_acc),
-              "Validation Loss: {:.3f}.. ".format(val_loss/len(validate_loader)),
-              #"Validation Accuracy: {:.3f}".format(val_accuracy),
-              "Validation AUC Score: {:.3f}".format(val_auc_score),
-              "Training Time: {}".format( training_time))
-            
-          
-        scheduler.step(val_auc_score)
-                
-        if val_auc_score >= best_val:
-            best_val = val_auc_score
-            patience = es_patience  # Resetting patience since we have new best validation accuracy
-            model_path = f'/home/stylegan2-ada-pytorch/melanoma_model_{best_val}.pth'
-            torch.save(model.state_dict(), model_path)  # Saving current best model
-            print(f'Saving model in {model_path}')
-        else:
-            patience -= 1
-            if patience == 0:
-                print('Early stopping. Best Val roc_auc: {:.3f}'.format(best_val))
-                break
-        
-    loss_history.append(running_loss)  
-    train_acc_history.append(train_acc)    
-    val_loss_history.append(val_loss)  
-    #val_acc_history.append(val_accuracy)
-    val_auc_history.append(val_auc_score)
-    
-
-total_training_time = str(datetime.timedelta(seconds=time.time() - Total_start_time  ))[:7]                  
-print("Total Training Time: {}".format(total_training_time))
+loss_history, train_acc_history, val_auc_history, val_loss_history = train(model, train_loader, validate_loader, epochs=10, es_patience=3)
 
 fig = plt.figure(figsize=(20, 5))
 ax1 = fig.add_subplot(1,2,1)
@@ -584,73 +645,16 @@ ax2.legend()
 plt.show()  
 plt.savefig(f'/home/stylegan2-ada-pytorch/training_ep_{e+1}.png')
 
+
 del training_dataset, validation_dataset, train_loader, validate_loader, images, val_images, val_labels
 gc.collect()
-"""
+
 
 ### TESTING THE NETWORK ###
-
-model.load_state_dict(torch.load('/home/stylegan2-ada-pytorch/melanoma_model_0.pth'))
-model.eval()
-model.to(device)
-test_preds=[]
-all_labels=[]
-with torch.no_grad():
-    
-    for f, (test_images, test_labels) in enumerate(test_loader):
-         
-        test_images, test_labels = test_images.to(device), test_labels.to(device)
-        
-        test_output = model(test_images)
-        test_pred = torch.sigmoid(test_output)
-            
-        test_preds.append(test_pred.cpu())
-        all_labels.append(test_labels.cpu())
-        
-    test_pred=np.vstack(test_preds).ravel()
-    test_pred2 = torch.tensor(test_pred)
-    test_gt = np.concatenate(all_labels)
-    test_gt2 = torch.tensor(test_gt)
-    test_accuracy = accuracy_score(test_gt2.cpu(), torch.round(test_pred2))
-    
-print("Test Accuracy: {}".format(test_accuracy))    
-        
-img_nb = '0000'
-predict_image_path=f'/home/stylegan2-ada-pytorch/generated/seed{img_nb}.png'
-
-probs, classes = predict(predict_image_path, model)   
-print(probs)
-print(classes)
-
+test_pred, test_gt = test('/home/stylegan2-ada-pytorch/melanoma_model_0.pth', test_loader)  
 
 ### CONFUSSION MATRIX ###
-
-test = test_gt
-pred = np.round(test_pred)
-cm = confusion_matrix(test, pred)
-
-cm_df = pd.DataFrame(cm,
-                     index = ['Benign','Malignant'], 
-                     columns = ['Benign','Malignant'])
-
-plt.figure(figsize=(5.5,4))
-sb.heatmap(cm_df, annot=True)
-plt.title('Confusion Matrix \nAccuracy:{0:.3f}'.format(test_accuracy))
-plt.ylabel('True label')
-plt.xlabel('Predicted label')
-plt.show()
-plt.savefig('/home/stylegan2-ada-pytorch/conf_matrix.png')
-
-# Display an image along with the diagnosis of melanoma or benign
-
-# Plot Skin image input image
-plt.figure(figsize = (6,10))
-plot_1 = plt.subplot(2,1,1)
-
-image = process_image(predict_image_path)
-
-imshow(image, plot_1)
-font = {"color": 'g'} if 'Benign' in classes else {"color": 'r'}
-
-plot_1.set_title(f"Diagnosis: {classes}, Output (prob) {probs[0]:.4f}", fontdict=font);
-plt.savefig(f'/home/stylegan2-ada-pytorch/prediction_{img_nb}.png')
+confussion_matrix(test_gt, test_pred)
+        
+# Plot diagnosis 
+plot_diagnosis('0000')
