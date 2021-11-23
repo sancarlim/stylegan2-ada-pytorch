@@ -69,7 +69,7 @@ class SIIMDataset(tdata.Dataset):
         #image_fn = meta['image_name'] + '.jpg'  # Use this when training with original images
         image_fn = meta['image_name'] + '.jpg'
         if self.test:
-            img = Image.open(str(IMAGE_DIR / ('test_224/' + image_fn)))
+            img = Image.open(str(IMAGE_DIR / ('test/test/' + image_fn)))
         else:
             img = Image.open(str(IMAGE_DIR / ('train_224/' + image_fn)))
         
@@ -97,8 +97,8 @@ class Synth_Dataset(tdata.Dataset):
         #class 0 - bening , class_1 - malign
         image_fn = self.input_images[idx]   #f'{idx:04d}_{idx%2}'
 
-        img = Image.open(str(source_dir / image_fn))
-        target = int(image_fn.split('seed')[1].replace('.jpg','')) > 2500  #class 1 seeds=2501-5000
+        img = Image.open(os.path.join(source_dir,image_fn))
+        target = int( int(image_fn.split('seed')[1].replace('.jpg','')) > 2500 )  #class 1 seeds=2501-5000
         
         if self.transform is not None:
             img = self.transform(img)
@@ -181,7 +181,7 @@ class FocalLoss(nn.Module):
  
 class LightModel(pl.LightningModule):
 
-    def __init__(self, df_train, df_test, pid_train, pid_val):
+    def __init__(self, df_train, df_test, pid_train, pid_val, test_syn=False):
         # This is where paths and options should be stored. I also store the
         # train_idx, val_idx for cross validation since the dataset are defined 
         # in the module !
@@ -204,9 +204,13 @@ class LightModel(pl.LightningModule):
                                              transforms.ToTensor(),
                                              transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                                                   std=[0.229, 0.224, 0.225])])
-        self.trainset = SIIMDataset(self.df_train[self.df_train['patient_id'].isin(pid_train)], self.transform_train)
-        self.valset = SIIMDataset(self.df_train[self.df_train['patient_id'].isin(pid_val)], self.transform_test)
-        self.testset = SIIMDataset(df_test, self.transform_test, test=True)
+        
+        if test_syn:
+            self.testset = Synth_Dataset(self.transform_test, test=True)
+        else:
+            self.trainset = SIIMDataset(self.df_train[self.df_train['patient_id'].isin(pid_train)], self.transform_train)
+            self.valset = SIIMDataset(self.df_train[self.df_train['patient_id'].isin(pid_val)], self.transform_test)
+            self.testset = SIIMDataset(df_test, self.transform_test, test=True)
 
     def forward(self, batch):
         # What to do with a batch in a forward. Usually simple if everything is already defined in the model.
@@ -271,12 +275,7 @@ class LightModel(pl.LightningModule):
         logits = self(batch)
         probs = torch.sigmoid(logits)
 
-        _, predicted = torch.max(probs, 1)
-        self.total += labels.size(0)
-        self.correct += (predicted == batch['target']).sum().item()
-        print('Accuracy of the network on the test images: %d %%' % (
-                100 * self.correct / self.total))
-
+        predicted = torch.round(probs)
         loss = self.loss_function(logits, batch['target']).unsqueeze(0) 
         return {'prediction': predicted, 'probs': probs, 'gt': batch['target']}
 
@@ -317,7 +316,7 @@ class LightModel(pl.LightningModule):
 
 
 training_dir = Path('/home/Data/melanoma_external_256')
-train_df = pd.read_csv(training_dir/'train_concat.csv')
+train_df = pd.read_csv(training_dir/'train.csv')
 test_synth_dir = Path('./generated')
 test_df = pd.read_csv(training_dir/'test.csv') 
 IMAGE_DIR = Path(training_dir)
@@ -339,13 +338,14 @@ with open("labels.json", "w") as outfile:
 #train_df.groupby(['target']).count()
 # so we have approx 60 times more negatives than positives. We need to make sure we split good/bad patients equally.
 
-df = pd.read_csv('/kaggle/input/melanoma-external-malignant-256/train_concat.csv')
-#patient_means = train_df.groupby(['patient_id'])['target'].mean()
-#patient_ids = train_df['patient_id'].unique()
+#df = pd.read_csv('/kaggle/input/melanoma-external-malignant-256/train_concat.csv')
+patient_means = train_df.groupby(['patient_id'])['target'].mean()
+patient_ids = train_df['patient_id'].unique()
 
 # Now let's make our split
-train_idx, val_idx = train_test_split(df, stratify=df.target, test_size = 0.2, random_state=42)    
-                    #train_test_split(np.arange(len(patient_ids)), stratify=(patient_means > 0), test_size=0.2)  # KFold + averaging should be much better considering how small the dataset is for malignant cases
+train_idx, val_idx = train_test_split(np.arange(len(patient_ids)), stratify=(patient_means > 0), test_size=0.2)  # KFold + averaging should be much better considering how small the dataset is for malignant cases
+                        #train_test_split(df, stratify=df.target, test_size = 0.2, random_state=42)    
+                    
 pid_train = patient_ids[train_idx]
 pid_val = patient_ids[val_idx]
 
@@ -358,8 +358,6 @@ OUTPUT_DIR = './lightning_logs'
 
 
 def main(args: Namespace):
-    # Initiate model
-    model = LightModel(train_df, test_df, pid_train, pid_val)
     tb_logger = pl.loggers.TensorBoardLogger(save_dir='./',
                                             name=f'baseline', # This will create different subfolders for your models
                                             version=f'0')  # If you use KFold you can specify here the fold number like f'fold_{fold+1}'
@@ -375,10 +373,12 @@ def main(args: Namespace):
                         )
 
     if args.test:
+        model = LightModel(train_df, test_df, pid_train, pid_val, test_syn=True)
         trainer = pl.Trainer(resume_from_checkpoint=args.ckpt, gpus=1)
         trainer.test(model)
 
     else:
+        model = LightModel(train_df, test_df, pid_train, pid_val)
         print('TRAINING STARTING...')
         trainer.fit(model)
         print('TRAINING FINISHED')
