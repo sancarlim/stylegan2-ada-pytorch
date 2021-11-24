@@ -462,7 +462,7 @@ def train(model, train_loader, validate_loader, epochs = 10, es_patience = 3):
                             
         train_acc = correct / len(training_dataset)
         
-        val_loss, val_auc_score = val(model, validate_loader, criterion)
+        val_loss, val_auc_score, val_accuracy = val(model, validate_loader, criterion)
         
         training_time = str(datetime.timedelta(seconds=time.time() - start_time))[:7]
             
@@ -470,7 +470,7 @@ def train(model, train_loader, validate_loader, epochs = 10, es_patience = 3):
             "Training Loss: {:.3f}.. ".format(running_loss/len(train_loader)),
             "Training Accuracy: {:.3f}..".format(train_acc),
             "Validation Loss: {:.3f}.. ".format(val_loss/len(validate_loader)),
-            #"Validation Accuracy: {:.3f}".format(val_accuracy),
+            "Validation Accuracy: {:.3f}".format(val_accuracy),
             "Validation AUC Score: {:.3f}".format(val_auc_score),
             "Training Time: {}".format( training_time))
             
@@ -506,6 +506,7 @@ def train(model, train_loader, validate_loader, epochs = 10, es_patience = 3):
 def val(model, validate_loader, criterion):          
     model.eval()
     preds=[]            
+    all_labels=[]
     # Turning off gradients for validation, saves memory and computations
     with torch.no_grad():
         
@@ -521,12 +522,16 @@ def val(model, validate_loader, criterion):
             val_pred = torch.sigmoid(val_output)
             
             preds.append(val_pred.cpu())
+            all_labels.append(val_labels.cpu())
         pred=np.vstack(preds).ravel()
+        pred2 = torch.tensor(pred)
+        val_gt = np.concatenate(all_labels)
+        val_gt2 = torch.tensor(val_gt)
             
-        #val_accuracy = accuracy_score(train_df['target'].values, torch.round(pred2))
-        val_auc_score = roc_auc_score(validation_df['target'].values, pred)
+        val_accuracy = accuracy_score(val_gt2, torch.round(pred2))
+        val_auc_score = roc_auc_score(val_gt, pred)
 
-        return val_loss, val_auc_score
+        return val_loss, val_auc_score, val_accuracy
 
 def test(model, test_loader):
     test_preds=[]
@@ -638,7 +643,7 @@ if __name__ == "__main__":
         p.numel() for p in model.parameters() if p.requires_grad)
     print(f'{total_trainable_params:,} training parameters.')
 
-
+    val_loss, val_auc_score, val_accuracy = val(model, validate_loader, nn.BCEWithLogitsLoss())
     loss_history, train_acc_history, val_auc_history, val_loss_history, model_path = train(model, train_loader, validate_loader, epochs=10, es_patience=3)
 
     fig = plt.figure(figsize=(20, 5))
