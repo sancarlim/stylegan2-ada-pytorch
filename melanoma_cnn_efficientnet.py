@@ -4,7 +4,6 @@ import matplotlib.pyplot as plt
 import seaborn as sb
 import cv2
 from PIL import Image
-import gc
 from pathlib import Path
 
 import torch
@@ -148,7 +147,7 @@ def predict(image_path, model, topk=1): #just 2 classes from 1 single output
     return top_probabilities, top_classes
 
 
-def confussion_matrix(test, test_pred):
+def confussion_matrix(test, test_pred, test_accuracy):
     pred = np.round(test_pred)
     cm = confusion_matrix(test, pred)
 
@@ -162,12 +161,10 @@ def confussion_matrix(test, test_pred):
     plt.ylabel('True label')
     plt.xlabel('Predicted label')
     plt.show()
-    plt.savefig('/home/stylegan2-ada-pytorch/conf_matrix.png')
+    plt.savefig('/home/stylegan2-ada-pytorch/conf_matrix_balanced.png')
 
-def plot_diagnosis(img_nb):
-
-    predict_image_path=f'/home/stylegan2-ada-pytorch/generated/seed{img_nb}.png'
-
+def plot_diagnosis(model, predict_image_path):
+    img_nb = predict_image_path.split('/')[4].split('.')[0]
     probs, classes = predict(predict_image_path, model)   
     print(probs)
     print(classes)
@@ -349,11 +346,13 @@ class CustomDataset(Dataset):
 
 class Synth_Dataset(Dataset):
     
-    def __init__(self, source_dir, transform, test=True):
+    def __init__(self, source_dir, transform, test=True, unbalanced=False):
         self.transform = transform
         self.test = test 
         self.source_dir = source_dir
         self.input_images = [str(f) for f in sorted(Path(source_dir).rglob('*')) if os.path.isfile(f)]
+        if unbalanced:
+            self.input_images = self.input_images[:5954]
 
     def __len__(self):
         return len(self.input_images)
@@ -511,10 +510,7 @@ def val(model, validate_loader, criterion):
 
         return val_loss, val_auc_score
 
-def test(model_path, test_loader):
-    model.load_state_dict(torch.load(model_path))
-    model.eval()
-    model.to(device)
+def test(model, test_loader):
     test_preds=[]
     all_labels=[]
     with torch.no_grad():
@@ -534,129 +530,133 @@ def test(model_path, test_loader):
         test_gt = np.concatenate(all_labels)
         test_gt2 = torch.tensor(test_gt)
         test_accuracy = accuracy_score(test_gt2.cpu(), torch.round(test_pred2))
-        test_auc_score = roc_auc_score(test_gt.cpu(), test_pred)
+        test_auc_score = roc_auc_score(test_gt, test_pred)
         
     print("Test Accuracy: {}, ROC_AUC_score: {}".format(test_accuracy, test_auc_score))  
 
-    return test_pred, test_gt
+    return test_pred, test_gt, test_accuracy
 
 
+if __name__ == "__main__":
 
+    df = pd.read_csv('/home/Data/melanoma_external_256/train_concat.csv')
+    test_df = pd.read_csv('/home/Data/melanoma_external_256/test.csv')
+    test_img_dir = '/home/Data/melanoma_external_256/test/test/'
+    train_img_dir = '/home/Data/melanoma_external_256/train/train/'
 
-df = pd.read_csv('/home/Data/melanoma_external_256/train_concat.csv')
-test_df = pd.read_csv('/home/Data/melanoma_external_256/test.csv')
-test_img_dir = '/home/Data/melanoma_external_256/test/test/'
-train_img_dir = '/home/Data/melanoma_external_256/train/train/'
+    train_split, valid_split = train_test_split (df, stratify=df.target, test_size = 0.20, random_state=42) 
 
-train_split, valid_split = train_test_split (df, stratify=df.target, test_size = 0.20, random_state=42) 
+    train_df=pd.DataFrame(train_split)
+    validation_df=pd.DataFrame(valid_split)
 
-train_df=pd.DataFrame(train_split)
-validation_df=pd.DataFrame(valid_split)
+    print(len(validation_df))
+    print(len(train_df))
 
-print(len(validation_df))
-print(len(train_df))
+    #skf = StratifiedKFold(n_splits=5)
+    #for fold, (train_ix, val_ix) in enumerate(skf.split(df['image_name'].to_numpy(), df['target'].to_numpy())): 
+    #print(len(train_ix), len(val_ix))                                      
+    #train_df = df.iloc[train_ix].reset_index(drop=True)
+    #validation_df = df.iloc[val_ix].reset_index(drop=True)
 
-#skf = StratifiedKFold(n_splits=5)
-#for fold, (train_ix, val_ix) in enumerate(skf.split(df['image_name'].to_numpy(), df['target'].to_numpy())): 
-#print(len(train_ix), len(val_ix))                                      
-#train_df = df.iloc[train_ix].reset_index(drop=True)
-#validation_df = df.iloc[val_ix].reset_index(drop=True)
+    # Defining transforms for the training, validation, and testing sets
+    training_transforms = transforms.Compose([#Microscope(),
+                                            #AdvancedHairAugmentation(),
+                                            transforms.RandomRotation(30),
+                                            transforms.RandomResizedCrop(256, scale=(0.8, 1.0)),
+                                            transforms.RandomHorizontalFlip(),
+                                            transforms.RandomVerticalFlip(),
+                                            transforms.ColorJitter(brightness=32. / 255.,saturation=0.5,hue=0.01),
+                                            transforms.ToTensor(),
+                                            transforms.Normalize([0.485, 0.456, 0.406], 
+                                                                [0.229, 0.224, 0.225])])
 
-# Defining transforms for the training, validation, and testing sets
-training_transforms = transforms.Compose([#Microscope(),
-                                          #AdvancedHairAugmentation(),
-                                          transforms.RandomRotation(30),
-                                          transforms.RandomResizedCrop(256, scale=(0.8, 1.0)),
-                                          transforms.RandomHorizontalFlip(),
-                                          transforms.RandomVerticalFlip(),
-                                          transforms.ColorJitter(brightness=32. / 255.,saturation=0.5,hue=0.01),
-                                          transforms.ToTensor(),
-                                          transforms.Normalize([0.485, 0.456, 0.406], 
-                                                               [0.229, 0.224, 0.225])])
+    validation_transforms = transforms.Compose([transforms.Resize(256),
+                                                transforms.CenterCrop(256),
+                                                transforms.ToTensor(),
+                                                transforms.Normalize([0.485, 0.456, 0.406], 
+                                                                    [0.229, 0.224, 0.225])])
 
-validation_transforms = transforms.Compose([transforms.Resize(256),
+    testing_transforms = transforms.Compose([transforms.Resize(256),
                                             transforms.CenterCrop(256),
                                             transforms.ToTensor(),
                                             transforms.Normalize([0.485, 0.456, 0.406], 
-                                                                 [0.229, 0.224, 0.225])])
+                                                                [0.229, 0.224, 0.225])])
 
-testing_transforms = transforms.Compose([transforms.Resize(256),
-                                         transforms.CenterCrop(256),
-                                         transforms.ToTensor(),
-                                         transforms.Normalize([0.485, 0.456, 0.406], 
-                                                              [0.229, 0.224, 0.225])])
+    # Loading the datasets with the transforms previously defined
+    training_dataset = CustomDataset(df = train_df,
+                                    img_dir = train_img_dir, 
+                                    train = True,
+                                    transforms = training_transforms )
 
-# Loading the datasets with the transforms previously defined
-training_dataset = CustomDataset(df = train_df,
-                                 img_dir = train_img_dir, 
-                                 train = True,
-                                 transforms = training_transforms )
+    validation_dataset = CustomDataset(df = validation_df,
+                                    img_dir = train_img_dir, 
+                                    train = True,
+                                    transforms = training_transforms )
 
-validation_dataset = CustomDataset(df = validation_df,
-                                   img_dir = train_img_dir, 
-                                   train = True,
-                                   transforms = training_transforms )
+    testing_dataset = Synth_Dataset(source_dir= '/home/Data/generated',
+                                    transform = testing_transforms, unbalanced=False)
 
-testing_dataset = Synth_Dataset(source_dir= '/home/stylegan2-ada-pytorch/generated',
-                                transform = testing_transforms)
+    train_loader = torch.utils.data.DataLoader(training_dataset, batch_size=32, num_workers=4, shuffle=True)
+    validate_loader = torch.utils.data.DataLoader(validation_dataset, batch_size=16, shuffle = False)
+    test_loader = torch.utils.data.DataLoader(testing_dataset, batch_size=16, shuffle = False)
+    print(len(train_loader))
+    print(len(validate_loader))
+    print(len(test_loader))
 
-train_loader = torch.utils.data.DataLoader(training_dataset, batch_size=32, num_workers=4, shuffle=True)
-validate_loader = torch.utils.data.DataLoader(validation_dataset, batch_size=16, shuffle = False)
-test_loader = torch.utils.data.DataLoader(testing_dataset, batch_size=16, shuffle = False)
-print(len(train_loader))
-print(len(validate_loader))
-print(len(test_loader))
+    arch = EfficientNet.from_pretrained('efficientnet-b2')
+    model = Net(arch=arch)  
+    model = model.to(device)
 
-arch = EfficientNet.from_pretrained('efficientnet-b2')
-model = Net(arch=arch)  
-model = model.to(device)
+    """
+    # If we need to freeze the pretrained model parameters to avoid backpropogating through them, turn to "False"
+    for parameter in model.parameters():
+        parameter.requires_grad = True
 
-# If we need to freeze the pretrained model parameters to avoid backpropogating through them, turn to "False"
-for parameter in model.parameters():
-    parameter.requires_grad = True
-
-#Total Parameters (If the model is unfrozen the trainning params will be the same as the Total params)
-total_params = sum(p.numel() for p in model.parameters())
-print(f'{total_params:,} total parameters.')
-total_trainable_params = sum(
-    p.numel() for p in model.parameters() if p.requires_grad)
-print(f'{total_trainable_params:,} training parameters.')
-
-""" 
-loss_history, train_acc_history, val_auc_history, val_loss_history = train(model, train_loader, validate_loader, epochs=10, es_patience=3)
-
-fig = plt.figure(figsize=(20, 5))
-ax1 = fig.add_subplot(1,2,1)
-ax2 = fig.add_subplot(1,2,2)
-
-ax1.plot(loss_history, label= 'Training Loss')  
-ax1.plot(val_loss_history,label='Validation Loss')
-ax1.set_title("Losses")
-ax1.set_xlabel('Epochs')
-ax1.set_ylabel('Loss')
-ax1.legend()
-
-ax2.plot(train_acc_history,label='Training accuracy')  
-#ax2.plot(val_acc_history,label='Validation accuracy')
-ax2.plot(val_auc_history,label='Validation AUC Score')
-ax2.set_title("Accuracies")
-ax2.set_xlabel('Epochs')
-ax2.set_ylabel('Accuracy')
-ax2.legend()
-
-plt.show()  
-plt.savefig(f'/home/stylegan2-ada-pytorch/training.png')
+    #Total Parameters (If the model is unfrozen the trainning params will be the same as the Total params)
+    total_params = sum(p.numel() for p in model.parameters())
+    print(f'{total_params:,} total parameters.')
+    total_trainable_params = sum(
+        p.numel() for p in model.parameters() if p.requires_grad)
+    print(f'{total_trainable_params:,} training parameters.')
 
 
-del training_dataset, validation_dataset, train_loader, validate_loader, images, val_images, val_labels
-gc.collect()
+    loss_history, train_acc_history, val_auc_history, val_loss_history = train(model, train_loader, validate_loader, epochs=10, es_patience=3)
 
- """
-### TESTING THE NETWORK ###
-test_pred, test_gt = test('/home/stylegan2-ada-pytorch/melanoma_model_0.9847273924494511.pth', test_loader)  
+    fig = plt.figure(figsize=(20, 5))
+    ax1 = fig.add_subplot(1,2,1)
+    ax2 = fig.add_subplot(1,2,2)
 
-### CONFUSSION MATRIX ###
-confussion_matrix(test_gt, test_pred)
-        
-# Plot diagnosis 
-plot_diagnosis('0000')
+    ax1.plot(loss_history, label= 'Training Loss')  
+    ax1.plot(val_loss_history,label='Validation Loss')
+    ax1.set_title("Losses")
+    ax1.set_xlabel('Epochs')
+    ax1.set_ylabel('Loss')
+    ax1.legend()
+
+    ax2.plot(train_acc_history,label='Training accuracy')  
+    #ax2.plot(val_acc_history,label='Validation accuracy')
+    ax2.plot(val_auc_history,label='Validation AUC Score')
+    ax2.set_title("Accuracies")
+    ax2.set_xlabel('Epochs')
+    ax2.set_ylabel('Accuracy')
+    ax2.legend()
+
+    plt.show()  
+    plt.savefig(f'/home/stylegan2-ada-pytorch/training.png')
+
+
+    del training_dataset, validation_dataset, train_loader, validate_loader, images, val_images, val_labels
+    gc.collect()
+
+    """
+    ### TESTING THE NETWORK ###
+    model.load_state_dict(torch.load('/home/stylegan2-ada-pytorch/melanoma_model_0.9866159851897974.pth'))
+    model.eval()
+    model.to(device)
+    test_pred, test_gt, test_accuracy = test(model, test_loader)  
+
+    ### CONFUSSION MATRIX ###
+    confussion_matrix(test_gt, test_pred, test_accuracy)
+            
+    # Plot diagnosis 
+    plot_diagnosis(model, '/home/Data/generated/seed9995_1.png')
