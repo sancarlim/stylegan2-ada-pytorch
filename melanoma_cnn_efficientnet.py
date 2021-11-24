@@ -563,6 +563,7 @@ def test(model, test_loader):
 if __name__ == "__main__":
     parser = ArgumentParser()
     parser.add_argument("--data_path", type=str, default='/home/Data/generated')
+    parser.add_argument("--epochs", type=int, default='10')
     args = parser.parse_args()
     """ 
     df = pd.read_csv(os.path.join(args.data_path , 'melanoma_external_256/train_concat.csv'))
@@ -643,8 +644,7 @@ if __name__ == "__main__":
         p.numel() for p in model.parameters() if p.requires_grad)
     print(f'{total_trainable_params:,} training parameters.')
 
-    val_loss, val_auc_score, val_accuracy = val(model, validate_loader, nn.BCEWithLogitsLoss())
-    loss_history, train_acc_history, val_auc_history, val_loss_history, model_path = train(model, train_loader, validate_loader, epochs=10, es_patience=3)
+    loss_history, train_acc_history, val_auc_history, val_loss_history, model_path = train(model, train_loader, validate_loader, epochs=args.epochs, es_patience=3)
 
     fig = plt.figure(figsize=(20, 5))
     ax1 = fig.add_subplot(1,2,1)
