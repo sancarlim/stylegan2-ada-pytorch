@@ -2,10 +2,11 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sb
+import gc
 import cv2
 from PIL import Image
 from pathlib import Path
-
+from argparse import ArgumentParser 
 import torch
 from torch import nn
 from torch import optim
@@ -161,7 +162,7 @@ def confussion_matrix(test, test_pred, test_accuracy):
     plt.ylabel('True label')
     plt.xlabel('Predicted label')
     plt.show()
-    plt.savefig('/home/stylegan2-ada-pytorch/conf_matrix_balanced.png')
+    plt.savefig('./conf_matrix_balanced_train_synth.png')
 
 def plot_diagnosis(model, predict_image_path):
     img_nb = predict_image_path.split('/')[4].split('.')[0]
@@ -179,7 +180,7 @@ def plot_diagnosis(model, predict_image_path):
     imshow(image, plot_1)
     font = {"color": 'g'} if 'Benign' in classes else {"color": 'r'}
     plot_1.set_title(f"Diagnosis: {classes}, Output (prob) {probs[0]:.4f}", fontdict=font);
-    plt.savefig(f'/home/stylegan2-ada-pytorch/prediction_{img_nb}.png')
+    plt.savefig(f'./prediction_{img_nb}.png')
 
 
 class AdvancedHairAugmentation:
@@ -318,47 +319,65 @@ class Microscope:
 
 
 class CustomDataset(Dataset):
-  def __init__(self, df: pd.DataFrame, img_dir, train: bool = True, transforms= None):
-    self.df = df
-    self.img_dir = img_dir
-    self.transforms = transforms
-    self.train = train
-
-  def __getitem__(self, index):
-    img_path = os.path.join(self.img_dir, self.df.iloc[index]['image_name'] + '.jpg')
-    #images = Image.open(img_path)
-    images = cv2.imread(img_path)
-
-    if self.transforms:
-        images = self.transforms(images)
-
-    if self.train:
-        labels = self.df.iloc[index]['target']
-        #return images, labels
-        return torch.tensor(images, dtype=torch.float32), torch.tensor(labels, dtype=torch.float32)
-    
-    else:
-        #return (images)
-        return torch.tensor(images, dtype=torch.float32)
-    
-  def __len__(self):
+    def __init__(self, df: pd.DataFrame, img_dir, train: bool = True, transforms= None):
+        self.df = df
+        self.img_dir = img_dir
+        self.transforms = transforms
+        self.train = train
+    def __len__(self):
         return len(self.df)
+    def __getitem__(self, index):
+        img_path = os.path.join(self.img_dir, self.df.iloc[index]['image_name'] + '.jpg')
+        #images = Image.open(img_path)
+        images = cv2.imread(img_path)
+
+        if self.transforms:
+            images = self.transforms(images)
+
+        if self.train:
+            labels = self.df.iloc[index]['target']
+            #return images, labels
+            return torch.tensor(images, dtype=torch.float32), torch.tensor(labels, dtype=torch.float32)
+        
+        else:
+            #return (images)
+            return torch.tensor(images, dtype=torch.float32)
+    
 
 class Synth_Dataset(Dataset):
     
-    def __init__(self, source_dir, transform, test=True, unbalanced=False):
+    def __init__(self, source_dir, transform, train_val_test='test', synth_training='False', unbalanced=False):
         self.transform = transform
-        self.test = test 
+        self.train_val_test = train_val_test 
         self.source_dir = source_dir
         self.input_images = [str(f) for f in sorted(Path(source_dir).rglob('*')) if os.path.isfile(f)]
-        if unbalanced:
-            self.input_images = self.input_images[:5954]
+        self.train_val_test = train_val_test
+        
+        if synth_training:
+            ind=np.random.permutation(range(len(self.input_images)))
+            self.train_id_list, self.val_id_list, self.test_id_list = ind[:round(len(ind)*0.6)], ind[round(len(ind)*0.6):round(len(ind)*0.8)] , ind[round(len(ind)*0.8):]       
+        else:
+            self.test_id_list = len(self.input_images)
+            if unbalanced:
+                self.input_images = self.input_images[:5954]
+        
 
     def __len__(self):
-        return len(self.input_images)
+        if self.train_val_test.lower() == 'train':
+            return len(self.train_id_list)
+        elif self.train_val_test.lower() == 'val':
+            return len(self.val_id_list)
+        else:
+            return len(self.test_id_list)
         
     def __getitem__(self, idx): 
-        #class 0 - bening , class_1 - malign
+        if self.train_val_test.lower() == 'train':
+            idx = self.train_id_list[idx]
+        elif self.train_val_test.lower() == 'val':
+            idx = self.val_id_list[idx]
+        else:
+            idx = self.test_id_list[idx]
+
         image_fn = self.input_images[idx]   #f'{idx:04d}_{idx%2}'
 
         img = np.array(Image.open(image_fn))
@@ -391,9 +410,6 @@ class Net(nn.Module):
         output = self.ouput(features)
         
         return output
-
-
-
 
 
 ### TRAINING ###
@@ -444,7 +460,7 @@ def train(model, train_loader, validate_loader, epochs = 10, es_patience = 3):
                 
             correct += (train_preds.cpu() == labels.cpu().unsqueeze(1)).sum().item()
                             
-        train_acc = correct / len(train_df)
+        train_acc = correct / len(training_dataset)
         
         val_loss, val_auc_score = val(model, validate_loader, criterion)
         
@@ -464,7 +480,7 @@ def train(model, train_loader, validate_loader, epochs = 10, es_patience = 3):
         if val_auc_score >= best_val:
             best_val = val_auc_score
             patience = es_patience  # Resetting patience since we have new best validation accuracy
-            model_path = f'/home/stylegan2-ada-pytorch/melanoma_model_{best_val}.pth'
+            model_path = f'./melanoma_model_{best_val}.pth'
             torch.save(model.state_dict(), model_path)  # Saving current best model
             print(f'Saving model in {model_path}')
         else:
@@ -482,9 +498,11 @@ def train(model, train_loader, validate_loader, epochs = 10, es_patience = 3):
     total_training_time = str(datetime.timedelta(seconds=time.time() - Total_start_time  ))[:7]                  
     print("Total Training Time: {}".format(total_training_time))
 
-    return loss_history, train_acc_history, val_auc_history, val_loss_history
-    
-            
+    del train_loader, validate_loader, images
+    gc.collect()
+
+    return loss_history, train_acc_history, val_auc_history, val_loss_history, model_path
+                
 def val(model, validate_loader, criterion):          
     model.eval()
     preds=[]            
@@ -538,11 +556,14 @@ def test(model, test_loader):
 
 
 if __name__ == "__main__":
-
-    df = pd.read_csv('/home/Data/melanoma_external_256/train_concat.csv')
-    test_df = pd.read_csv('/home/Data/melanoma_external_256/test.csv')
-    test_img_dir = '/home/Data/melanoma_external_256/test/test/'
-    train_img_dir = '/home/Data/melanoma_external_256/train/train/'
+    parser = ArgumentParser()
+    parser.add_argument("--data_path", type=str, default='/home/Data/generated')
+    args = parser.parse_args()
+    """ 
+    df = pd.read_csv(os.path.join(args.data_path , 'melanoma_external_256/train_concat.csv'))
+    test_df = pd.read_csv(os.path.join(args.data_path ,'melanoma_external_256/test.csv'))
+    test_img_dir = os.path.join(args.data_path , 'melanoma_external_256/test/test/')
+    train_img_dir = os.path.join(args.data_path ,'melanoma_external_256/train/train/')
 
     train_split, valid_split = train_test_split (df, stratify=df.target, test_size = 0.20, random_state=42) 
 
@@ -550,7 +571,7 @@ if __name__ == "__main__":
     validation_df=pd.DataFrame(valid_split)
 
     print(len(validation_df))
-    print(len(train_df))
+    print(len(train_df)) """
 
     #skf = StratifiedKFold(n_splits=5)
     #for fold, (train_ix, val_ix) in enumerate(skf.split(df['image_name'].to_numpy(), df['target'].to_numpy())): 
@@ -583,18 +604,16 @@ if __name__ == "__main__":
                                                                 [0.229, 0.224, 0.225])])
 
     # Loading the datasets with the transforms previously defined
-    training_dataset = CustomDataset(df = train_df,
-                                    img_dir = train_img_dir, 
-                                    train = True,
-                                    transforms = training_transforms )
+    training_dataset = Synth_Dataset(source_dir = os.path.join(args.data_path), 
+                                        transform = training_transforms, train_val_test= 'train', synth_training='True') 
+                                        #CustomDataset(df = train_df, img_dir = train_img_dir,  train = True, transforms = training_transforms )
 
-    validation_dataset = CustomDataset(df = validation_df,
-                                    img_dir = train_img_dir, 
-                                    train = True,
-                                    transforms = training_transforms )
+    validation_dataset = Synth_Dataset(source_dir = os.path.join(args.data_path), 
+                                        transform = training_transforms, train_val_test= 'val', synth_training='True') 
+                                        #CustomDataset(df = validation_df, img_dir = train_img_dir, train = True, transforms = training_transforms )
 
-    testing_dataset = Synth_Dataset(source_dir= '/home/Data/generated',
-                                    transform = testing_transforms, unbalanced=False)
+    testing_dataset = Synth_Dataset(source_dir= os.path.join(args.data_path), 
+                                    transform = testing_transforms, train_val_test= 'test', synth_training='True')
 
     train_loader = torch.utils.data.DataLoader(training_dataset, batch_size=32, num_workers=4, shuffle=True)
     validate_loader = torch.utils.data.DataLoader(validation_dataset, batch_size=16, shuffle = False)
@@ -607,7 +626,7 @@ if __name__ == "__main__":
     model = Net(arch=arch)  
     model = model.to(device)
 
-    """
+    
     # If we need to freeze the pretrained model parameters to avoid backpropogating through them, turn to "False"
     for parameter in model.parameters():
         parameter.requires_grad = True
@@ -620,7 +639,7 @@ if __name__ == "__main__":
     print(f'{total_trainable_params:,} training parameters.')
 
 
-    loss_history, train_acc_history, val_auc_history, val_loss_history = train(model, train_loader, validate_loader, epochs=10, es_patience=3)
+    loss_history, train_acc_history, val_auc_history, val_loss_history, model_path = train(model, train_loader, validate_loader, epochs=10, es_patience=3)
 
     fig = plt.figure(figsize=(20, 5))
     ax1 = fig.add_subplot(1,2,1)
@@ -642,15 +661,14 @@ if __name__ == "__main__":
     ax2.legend()
 
     plt.show()  
-    plt.savefig(f'/home/stylegan2-ada-pytorch/training.png')
+    plt.savefig(f'./training.png')
 
-
-    del training_dataset, validation_dataset, train_loader, validate_loader, images, val_images, val_labels
+    del training_dataset, validation_dataset 
     gc.collect()
 
-    """
+    
     ### TESTING THE NETWORK ###
-    model.load_state_dict(torch.load('/home/stylegan2-ada-pytorch/melanoma_model_0.9866159851897974.pth'))
+    model.load_state_dict(torch.load(model_path))
     model.eval()
     model.to(device)
     test_pred, test_gt, test_accuracy = test(model, test_loader)  
@@ -659,4 +677,4 @@ if __name__ == "__main__":
     confussion_matrix(test_gt, test_pred, test_accuracy)
             
     # Plot diagnosis 
-    plot_diagnosis(model, '/home/Data/generated/seed9995_1.png')
+    plot_diagnosis(model, os.path.join(args.data_path, 'seed9995_1.png'))
