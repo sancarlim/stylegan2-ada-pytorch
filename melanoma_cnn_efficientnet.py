@@ -165,7 +165,7 @@ def confussion_matrix(test, test_pred, test_accuracy):
     plt.savefig('./conf_matrix_balanced_train_synth.png')
 
 def plot_diagnosis(model, predict_image_path):
-    img_nb = predict_image_path.split('/')[4].split('.')[0]
+    img_nb = predict_image_path.split('/')[-1].split('.')[0]
     probs, classes = predict(predict_image_path, model)   
     print(probs)
     print(classes)
@@ -351,11 +351,24 @@ class Synth_Dataset(Dataset):
         self.train_val_test = train_val_test 
         self.source_dir = source_dir
         self.input_images = [str(f) for f in sorted(Path(source_dir).rglob('*')) if os.path.isfile(f)]
+
+        ind_0, ind_1 = [], []
+        for i, f in enumerate(self.input_images):
+            if f.split('.png')[0][-1] == '0':
+                ind_0.append(i)
+            else:
+                ind_1.append(i) 
+
         self.train_val_test = train_val_test
         
         if synth_training:
-            ind=np.random.permutation(range(len(self.input_images)))
-            self.train_id_list, self.val_id_list, self.test_id_list = ind[:round(len(ind)*0.6)], ind[round(len(ind)*0.6):round(len(ind)*0.8)] , ind[round(len(ind)*0.8):]       
+            ind_0=np.random.permutation(ind_0)
+            ind_1=np.random.permutation(ind_1)
+            self.train_id_list, self.val_id_list, self.test_id_list = ind_0[:round(len(ind_0)*0.6)], ind_0[round(len(ind_0)*0.6):round(len(ind_0)*0.8)] , ind_0[round(len(ind_0)*0.8):]       
+            train_id_1, val_id_1, test_id_1 = ind_1[:round(len(ind_1)*0.6)], ind_1[round(len(ind_1)*0.6):round(len(ind_1)*0.8)] , ind_1[round(len(ind_1)*0.8):] 
+            self.train_id_list = np.random.permutation(np.append(self.train_id_list,train_id_1))
+            self.val_id_list = np.random.permutation(np.append(self.val_id_list, val_id_1))
+            self.test_id_list = np.append(self.test_id_list, test_id_1)       
         else:
             self.test_id_list = len(self.input_images)
             if unbalanced:
@@ -381,7 +394,7 @@ class Synth_Dataset(Dataset):
         image_fn = self.input_images[idx]   #f'{idx:04d}_{idx%2}'
 
         img = np.array(Image.open(image_fn))
-        target = int(image_fn.split('_')[1].replace('.png',''))  
+        target = int(image_fn.split('_')[-1].replace('.png',''))  
         
         if self.transform is not None:
             img = self.transform(img)
