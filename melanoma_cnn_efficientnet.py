@@ -162,7 +162,7 @@ def confussion_matrix(test, test_pred, test_accuracy):
     plt.ylabel('True label')
     plt.xlabel('Predicted label')
     plt.show()
-    plt.savefig('./conf_matrix_balanced_train_synth.png')
+    plt.savefig(f'./conf_matrix_{test_accuracy}.png')
 
 def plot_diagnosis(model, predict_image_path):
     img_nb = predict_image_path.split('/')[-1].split('.')[0]
@@ -679,7 +679,7 @@ if __name__ == "__main__":
     ax2.legend()
 
     plt.show()  
-    plt.savefig(f'./training.png')
+    plt.savefig(f'./training_'+ args.data_path.split('/')[-1] + '.png')
 
     del training_dataset, validation_dataset 
     gc.collect()
