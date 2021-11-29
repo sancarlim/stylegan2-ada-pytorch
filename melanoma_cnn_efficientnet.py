@@ -162,7 +162,8 @@ def confussion_matrix(test, test_pred, test_accuracy):
     plt.ylabel('True label')
     plt.xlabel('Predicted label')
     plt.show()
-    plt.savefig(f'./conf_matrix_{test_accuracy}.png')
+    bal_unbal = args.data_path.split('/')[-1]
+    plt.savefig(f'./conf_matrix_{test_accuracy:.4f}_{bal_unbal}.png')
 
 def plot_diagnosis(model, predict_image_path):
     img_nb = predict_image_path.split('/')[-1].split('.')[0]
@@ -181,6 +182,25 @@ def plot_diagnosis(model, predict_image_path):
     font = {"color": 'g'} if 'Benign' in classes else {"color": 'r'}
     plot_1.set_title(f"Diagnosis: {classes}, Output (prob) {probs[0]:.4f}", fontdict=font);
     plt.savefig(f'./prediction_{img_nb}.png')
+
+
+def create_split(source_dir):       
+    input_images = [str(f) for f in sorted(Path(source_dir).rglob('*')) if os.path.isfile(f)]
+    ind_0, ind_1 = [], []
+    for i, f in enumerate(input_images):
+        if f.split('.png')[0][-1] == '0':
+            ind_0.append(i)
+        else:
+            ind_1.append(i) 
+    ind_0=np.random.permutation(ind_0)
+    ind_1=np.random.permutation(ind_1)
+    train_id_list, val_id_list, test_id_list = ind_0[:round(len(ind_0)*0.6)], ind_0[round(len(ind_0)*0.6):round(len(ind_0)*0.8)] , ind_0[round(len(ind_0)*0.8):]       
+    train_id_1, val_id_1, test_id_1 = ind_1[:round(len(ind_1)*0.6)], ind_1[round(len(ind_1)*0.6):round(len(ind_1)*0.8)] , ind_1[round(len(ind_1)*0.8):] 
+    train_id_list = np.random.permutation(np.append(train_id_list,train_id_1))
+    val_id_list = np.random.permutation(np.append(val_id_list, val_id_1))
+    test_id_list = np.append(test_id_list, test_id_1)     
+
+    return train_id_list, val_id_list, test_id_list
 
 
 class AdvancedHairAugmentation:
@@ -345,51 +365,22 @@ class CustomDataset(Dataset):
     
 
 class Synth_Dataset(Dataset):
-    
-    def __init__(self, source_dir, transform, train_val_test='test', synth_training='False', unbalanced=False):
+    def __init__(self, source_dir, transform, id_list, test = False, unbalanced=False):
         self.transform = transform
-        self.train_val_test = train_val_test 
         self.source_dir = source_dir
+        self.id_list = id_list
         self.input_images = [str(f) for f in sorted(Path(source_dir).rglob('*')) if os.path.isfile(f)]
-
-        ind_0, ind_1 = [], []
-        for i, f in enumerate(self.input_images):
-            if f.split('.png')[0][-1] == '0':
-                ind_0.append(i)
-            else:
-                ind_1.append(i) 
-
-        self.train_val_test = train_val_test
-        
-        if synth_training:
-            ind_0=np.random.permutation(ind_0)
-            ind_1=np.random.permutation(ind_1)
-            self.train_id_list, self.val_id_list, self.test_id_list = ind_0[:round(len(ind_0)*0.6)], ind_0[round(len(ind_0)*0.6):round(len(ind_0)*0.8)] , ind_0[round(len(ind_0)*0.8):]       
-            train_id_1, val_id_1, test_id_1 = ind_1[:round(len(ind_1)*0.6)], ind_1[round(len(ind_1)*0.6):round(len(ind_1)*0.8)] , ind_1[round(len(ind_1)*0.8):] 
-            self.train_id_list = np.random.permutation(np.append(self.train_id_list,train_id_1))
-            self.val_id_list = np.random.permutation(np.append(self.val_id_list, val_id_1))
-            self.test_id_list = np.append(self.test_id_list, test_id_1)       
-        else:
-            self.test_id_list = len(self.input_images)
+            
+        if test:
+            self.id_list = len(self.input_images)
             if unbalanced:
                 self.input_images = self.input_images[:5954]
         
-
     def __len__(self):
-        if self.train_val_test.lower() == 'train':
-            return len(self.train_id_list)
-        elif self.train_val_test.lower() == 'val':
-            return len(self.val_id_list)
-        else:
-            return len(self.test_id_list)
+        return len(self.id_list)
         
     def __getitem__(self, idx): 
-        if self.train_val_test.lower() == 'train':
-            idx = self.train_id_list[idx]
-        elif self.train_val_test.lower() == 'val':
-            idx = self.val_id_list[idx]
-        else:
-            idx = self.test_id_list[idx]
+        idx = self.id_list[idx]
 
         image_fn = self.input_images[idx]   #f'{idx:04d}_{idx%2}'
 
@@ -400,6 +391,7 @@ class Synth_Dataset(Dataset):
             img = self.transform(img)
 
         return torch.tensor(img, dtype=torch.float32), torch.tensor(target, dtype=torch.float32)
+
 
 class Net(nn.Module):
     def __init__(self, arch):
@@ -493,7 +485,8 @@ def train(model, train_loader, validate_loader, epochs = 10, es_patience = 3):
         if val_auc_score >= best_val:
             best_val = val_auc_score
             patience = es_patience  # Resetting patience since we have new best validation accuracy
-            model_path = f'./melanoma_model_{best_val}.pth'
+            bal_unbal = args.data_path.split('/')[-1]
+            model_path = f'./melanoma_model_{best_val:.4f}_{bal_unbal}.pth'
             torch.save(model.state_dict(), model_path)  # Saving current best model
             print(f'Saving model in {model_path}')
         else:
@@ -623,16 +616,14 @@ if __name__ == "__main__":
                                                                 [0.229, 0.224, 0.225])])
 
     # Loading the datasets with the transforms previously defined
-    training_dataset = Synth_Dataset(source_dir = os.path.join(args.data_path), 
-                                        transform = training_transforms, train_val_test= 'train', synth_training='True') 
+    train_id, val_id, test_id = create_split(args.data_path)
+    training_dataset = Synth_Dataset(source_dir = args.data_path, transform = training_transforms, id_list = train_id) 
                                         #CustomDataset(df = train_df, img_dir = train_img_dir,  train = True, transforms = training_transforms )
 
-    validation_dataset = Synth_Dataset(source_dir = os.path.join(args.data_path), 
-                                        transform = training_transforms, train_val_test= 'val', synth_training='True') 
+    validation_dataset = Synth_Dataset(source_dir = args.data_path, transform = training_transforms, id_list = val_id) 
                                         #CustomDataset(df = validation_df, img_dir = train_img_dir, train = True, transforms = training_transforms )
 
-    testing_dataset = Synth_Dataset(source_dir= os.path.join(args.data_path), 
-                                    transform = testing_transforms, train_val_test= 'test', synth_training='True')
+    testing_dataset = Synth_Dataset(source_dir = args.data_path, transform = testing_transforms, id_list = test_id)
 
     train_loader = torch.utils.data.DataLoader(training_dataset, batch_size=32, num_workers=4, shuffle=True)
     validate_loader = torch.utils.data.DataLoader(validation_dataset, batch_size=16, shuffle = False)
