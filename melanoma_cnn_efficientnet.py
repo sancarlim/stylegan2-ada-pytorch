@@ -444,6 +444,7 @@ def train(model, train_loader, validate_loader, k_fold = 0, epochs = 10, es_pati
     val_loss_history=[]  
     val_acc_history=[] 
     val_auc_history=[]
+    val_f1_history=[]
         
     patience = es_patience
     Total_start_time = time.time()  
@@ -477,7 +478,7 @@ def train(model, train_loader, validate_loader, k_fold = 0, epochs = 10, es_pati
                             
         train_acc = correct / len(training_dataset)
         
-        val_loss, val_auc_score, val_accuracy = val(model, validate_loader, criterion)
+        val_loss, val_auc_score, val_accuracy, val_f1 = val(model, validate_loader, criterion)
         
         training_time = str(datetime.timedelta(seconds=time.time() - start_time))[:7]
             
@@ -487,13 +488,14 @@ def train(model, train_loader, validate_loader, k_fold = 0, epochs = 10, es_pati
             "Validation Loss: {:.3f}.. ".format(val_loss/len(validate_loader)),
             "Validation Accuracy: {:.3f}".format(val_accuracy),
             "Validation AUC Score: {:.3f}".format(val_auc_score),
+            "Validation F1 Score: {:.3f}".format(val_f1),
             "Training Time: {}".format( training_time))
             
         
-        scheduler.step(val_auc_score)
+        scheduler.step(val_f1)
                 
-        if val_auc_score >= best_val:
-            best_val = val_auc_score
+        if val_f1 > best_val:
+            best_val = val_f1
             patience = es_patience  # Resetting patience since we have new best validation accuracy
             bal_unbal = args.data_path.split('/')[-1]
             model_path = f'./melanoma_model_{k_fold}_{best_val:.4f}_{bal_unbal}.pth'
@@ -502,7 +504,7 @@ def train(model, train_loader, validate_loader, k_fold = 0, epochs = 10, es_pati
         else:
             patience -= 1
             if patience == 0:
-                print('Early stopping. Best Val roc_auc: {:.3f}'.format(best_val))
+                print('Early stopping. Best Val f1: {:.3f}'.format(best_val))
                 break
         
         loss_history.append(running_loss)  
@@ -510,6 +512,7 @@ def train(model, train_loader, validate_loader, k_fold = 0, epochs = 10, es_pati
         val_loss_history.append(val_loss)  
         #val_acc_history.append(val_accuracy)
         val_auc_history.append(val_auc_score)
+        val_f1_history.append(val_f1)
 
     total_training_time = str(datetime.timedelta(seconds=time.time() - Total_start_time  ))[:7]                  
     print("Total Training Time: {}".format(total_training_time))
@@ -517,7 +520,7 @@ def train(model, train_loader, validate_loader, k_fold = 0, epochs = 10, es_pati
     del train_loader, validate_loader, images
     gc.collect()
 
-    return loss_history, train_acc_history, val_auc_history, val_loss_history, model_path
+    return loss_history, train_acc_history, val_auc_history, val_loss_history, val_f1_history, model_path
                 
 def val(model, validate_loader, criterion):          
     model.eval()
@@ -546,8 +549,9 @@ def val(model, validate_loader, criterion):
             
         val_accuracy = accuracy_score(val_gt2, torch.round(pred2))
         val_auc_score = roc_auc_score(val_gt, pred)
+        val_f1_score = f1_score(val_gt, np.round(pred))
 
-        return val_loss, val_auc_score, val_accuracy
+        return val_loss, val_auc_score, val_accuracy, val_f1_score
 
 def test(model, test_loader):
     test_preds=[]
@@ -684,7 +688,7 @@ if __name__ == "__main__":
             p.numel() for p in model.parameters() if p.requires_grad)
         print(f'{total_trainable_params:,} training parameters.')
 
-        loss_history, train_acc_history, val_auc_history, val_loss_history, model_path = train(model, train_loader, validate_loader, fold, epochs=args.epochs, es_patience=3)
+        loss_history, train_acc_history, val_auc_history, val_loss_history, val_f1_history, model_path = train(model, train_loader, validate_loader, fold, epochs=args.epochs, es_patience=3)
 
         fig = plt.figure(figsize=(20, 5))
         ax1 = fig.add_subplot(1,2,1)
@@ -700,13 +704,14 @@ if __name__ == "__main__":
         ax2.plot(train_acc_history,label='Training accuracy')  
         #ax2.plot(val_acc_history,label='Validation accuracy')
         ax2.plot(val_auc_history,label='Validation AUC Score')
+        ax2.plot(val_f1_history,label='Validation F1 Score')
         ax2.set_title("Accuracies")
         ax2.set_xlabel('Epochs')
         ax2.set_ylabel('Accuracy')
         ax2.legend()
 
         plt.show()  
-        plt.savefig(f'./training_'+ fold + args.data_path.split('/')[-1] + '.png')
+        plt.savefig(f'./training_'+ str(fold) + args.data_path.split('/')[-1] + '.png')
 
     del training_dataset, validation_dataset 
     gc.collect()
