@@ -198,15 +198,16 @@ def create_split(source_dir, unbalanced=False):
     ind_1=np.random.permutation(ind_1)
     if unbalanced:
         ind_1 = ind_1[:round(len(ind_1)*0.16)] #Train with 15% melanoma
-
+    
+    """
     train_id_list, val_id_list, test_id_list = ind_0[:round(len(ind_0)*0.6)], ind_0[round(len(ind_0)*0.6):round(len(ind_0)*0.8)] , ind_0[round(len(ind_0)*0.8):]       
     train_id_1, val_id_1, test_id_1 = ind_1[:round(len(ind_1)*0.6)], ind_1[round(len(ind_1)*0.6):round(len(ind_1)*0.8)] , ind_1[round(len(ind_1)*0.8):] 
     
     train_id_list = np.random.permutation(np.append(train_id_list,train_id_1))
     val_id_list = np.random.permutation(np.append(val_id_list, val_id_1))
     test_id_list = np.append(test_id_list, test_id_1)     
-
-    return train_id_list, val_id_list, test_id_list
+    """
+    return ind_0, ind_1 #train_id_list, val_id_list, test_id_list
 
 
 class AdvancedHairAugmentation:
@@ -371,11 +372,14 @@ class CustomDataset(Dataset):
     
 
 class Synth_Dataset(Dataset):
-    def __init__(self, source_dir, transform, id_list, test = False, unbalanced=False):
+    def __init__(self, source_dir, transform, id_list, input_img=None, test = False, unbalanced=False):
         self.transform = transform
         self.source_dir = source_dir
         self.id_list = id_list
-        self.input_images = [str(f) for f in sorted(Path(source_dir).rglob('*')) if os.path.isfile(f)]
+        if input_img is None:
+            self.input_images = [str(f) for f in sorted(Path(source_dir).rglob('*')) if os.path.isfile(f)]
+        else:
+            self.input_images = input_img
             
         if test:
             self.id_list = range(len(self.input_images))
@@ -424,7 +428,7 @@ class Net(nn.Module):
 
 
 ### TRAINING ###
-def train(model, train_loader, validate_loader, epochs = 10, es_patience = 3):
+def train(model, train_loader, validate_loader, k_fold = 0, epochs = 10, es_patience = 3):
     # Training model
     print('Starts training...')
 
@@ -492,7 +496,7 @@ def train(model, train_loader, validate_loader, epochs = 10, es_patience = 3):
             best_val = val_auc_score
             patience = es_patience  # Resetting patience since we have new best validation accuracy
             bal_unbal = args.data_path.split('/')[-1]
-            model_path = f'./melanoma_model_{best_val:.4f}_{bal_unbal}.pth'
+            model_path = f'./melanoma_model_{k_fold}_{best_val:.4f}_{bal_unbal}.pth'
             torch.save(model.state_dict(), model_path)  # Saving current best model
             print(f'Saving model in {model_path}')
         else:
@@ -577,9 +581,13 @@ if __name__ == "__main__":
     parser = ArgumentParser()
     parser.add_argument("--data_path", type=str, default='/home/Data/')
     parser.add_argument("--epochs", type=int, default='10')
+    parser.add_argument("--kfold", type=int, default='3', help='number of folds for stratisfied kfold')
     parser.add_argument("--unbalanced", action='store_true', help='train with 15% melanoma')
     args = parser.parse_args()
-    
+
+    """ 
+    # For training with ISIC dataset
+
     df = pd.read_csv(os.path.join(args.data_path , 'melanoma_external_256/train_concat.csv'))
     test_df = pd.read_csv(os.path.join(args.data_path ,'melanoma_external_256/test.csv'))
     test_img_dir = os.path.join(args.data_path , 'melanoma_external_256/test/test/')
@@ -592,13 +600,7 @@ if __name__ == "__main__":
     
     print(len(validation_df))
     print(len(train_df)) 
-
-    #skf = StratifiedKFold(n_splits=5)
-    #for fold, (train_ix, val_ix) in enumerate(skf.split(df['image_name'].to_numpy(), df['target'].to_numpy())): 
-    #print(len(train_ix), len(val_ix))                                      
-    #train_df = df.iloc[train_ix].reset_index(drop=True)
-    #validation_df = df.iloc[val_ix].reset_index(drop=True)
-
+    """
     # Defining transforms for the training, validation, and testing sets
     training_transforms = transforms.Compose([#Microscope(),
                                             #AdvancedHairAugmentation(),
@@ -622,64 +624,89 @@ if __name__ == "__main__":
                                             transforms.ToTensor(),
                                             transforms.Normalize([0.485, 0.456, 0.406], 
                                                                 [0.229, 0.224, 0.225])])
+    
+    
+    """
+    train_0, test_0 = train_test_split(ind_0, test_size=0.2, random_state=3)
+    train_1, test_1 = train_test_split(ind_1, test_size=0.2, random_state=3)
+    train_id = np.append(train_0,train_1)
+    test_ix = np.append(test_0,test_1)
+    train_0, val_0 = train_test_split(ind_0, test_size=0.25, random_state=3) # 0.25 x 0.8 = 0.2
+    train_1, val_1 = train_test_split(ind_1, test_size=0.25, random_state=3) # 0.25 x 0.8 = 0.2
+    train_id = np.append(train_0,train_1)
+    val_id = np.append(val_0, val_1)
+    """
+    input_images = [str(f) for f in sorted(Path(args.data_path).rglob('*')) if os.path.isfile(f)]
+    y = [0 if f.split('.png')[0][-1] == '0' else 1 for f in input_images]
+    if args.unbalanced:
+        ind_0, ind_1 = create_split(args.data_path, unbalanced=args.unbalanced)
+        ind=np.append(ind_0, ind_1)
+        input_images = [input_images[i] for i in ind]
+        y = [y[i] for i in ind]
+    train_img, test_img, train_gt, test_gt = train_test_split(input_images, y, stratify=y, test_size=0.2, random_state=3)
+    testing_dataset = Synth_Dataset(source_dir = args.data_path, transform = testing_transforms, id_list = range(len(test_gt)), input_img=test_img)
+                            #CustomDataset(df = df, img_dir = train_img_dir,  train = True, transforms = testing_transforms ) 
 
-    # Loading the datasets with the transforms previously defined
-    train_id, val_id, test_id = create_split(args.data_path, unbalanced=args.unbalanced)
-    training_dataset = Synth_Dataset(source_dir = args.data_path, transform = training_transforms, id_list = train_id) 
-                                        #CustomDataset(df = train_df, img_dir = train_img_dir,  train = True, transforms = training_transforms )
+    skf = StratifiedKFold(n_splits=args.kfold)
+    for fold, (train_ix, val_ix) in enumerate(skf.split(train_img, train_gt)): 
+        print(len(train_ix), len(val_ix))                                      
+        #train_df = df.iloc[train_ix].reset_index(drop=True)
+        #validation_df = df.iloc[val_ix].reset_index(drop=True)
 
-    validation_dataset = Synth_Dataset(source_dir = args.data_path, transform = training_transforms, id_list = val_id) 
-                                        #CustomDataset(df = validation_df, img_dir = train_img_dir, train = True, transforms = training_transforms )
+        # Loading the datasets with the transforms previously defined
+        #train_id, val_id, test_id = create_split(args.data_path, unbalanced=args.unbalanced)
+        training_dataset = Synth_Dataset(source_dir = args.data_path, transform = training_transforms, id_list = train_ix) 
+                                            #CustomDataset(df = train_df, img_dir = train_img_dir,  train = True, transforms = training_transforms )
 
-    testing_dataset = Synth_Dataset(source_dir = args.data_path, transform = testing_transforms, id_list = test_id)
-                        #CustomDataset(df = df, img_dir = train_img_dir,  train = True, transforms = testing_transforms ) 
+        validation_dataset = Synth_Dataset(source_dir = args.data_path, transform = training_transforms, id_list = val_ix) 
+                                            #CustomDataset(df = validation_df, img_dir = train_img_dir, train = True, transforms = training_transforms )
 
-    train_loader = torch.utils.data.DataLoader(training_dataset, batch_size=32, num_workers=4, shuffle=True)
-    validate_loader = torch.utils.data.DataLoader(validation_dataset, batch_size=16, shuffle = False)
-    test_loader = torch.utils.data.DataLoader(testing_dataset, batch_size=16, shuffle = False)
-    print(len(training_dataset), len(validation_dataset))
-    print(len(train_loader))
-    print(len(validate_loader))
-    print(len(test_loader))
+        
 
-    arch = EfficientNet.from_pretrained('efficientnet-b2')
-    model = Net(arch=arch)  
-    model = model.to(device)
+        train_loader = torch.utils.data.DataLoader(training_dataset, batch_size=32, num_workers=4, shuffle=True)
+        validate_loader = torch.utils.data.DataLoader(validation_dataset, batch_size=16, shuffle = False)
+        test_loader = torch.utils.data.DataLoader(testing_dataset, batch_size=16, shuffle = False)
+        print(len(training_dataset), len(validation_dataset))
+        print(len(train_loader),len(validate_loader),len(test_loader))
 
-    # If we need to freeze the pretrained model parameters to avoid backpropogating through them, turn to "False"
-    for parameter in model.parameters():
-        parameter.requires_grad = True
+        arch = EfficientNet.from_pretrained('efficientnet-b2')
+        model = Net(arch=arch)  
+        model = model.to(device)
 
-    #Total Parameters (If the model is unfrozen the trainning params will be the same as the Total params)
-    total_params = sum(p.numel() for p in model.parameters())
-    print(f'{total_params:,} total parameters.')
-    total_trainable_params = sum(
-        p.numel() for p in model.parameters() if p.requires_grad)
-    print(f'{total_trainable_params:,} training parameters.')
+        # If we need to freeze the pretrained model parameters to avoid backpropogating through them, turn to "False"
+        for parameter in model.parameters():
+            parameter.requires_grad = True
 
-    loss_history, train_acc_history, val_auc_history, val_loss_history, model_path = train(model, train_loader, validate_loader, epochs=args.epochs, es_patience=3)
+        #Total Parameters (If the model is unfrozen the trainning params will be the same as the Total params)
+        total_params = sum(p.numel() for p in model.parameters())
+        print(f'{total_params:,} total parameters.')
+        total_trainable_params = sum(
+            p.numel() for p in model.parameters() if p.requires_grad)
+        print(f'{total_trainable_params:,} training parameters.')
 
-    fig = plt.figure(figsize=(20, 5))
-    ax1 = fig.add_subplot(1,2,1)
-    ax2 = fig.add_subplot(1,2,2)
+        loss_history, train_acc_history, val_auc_history, val_loss_history, model_path = train(model, train_loader, validate_loader, fold, epochs=args.epochs, es_patience=3)
 
-    ax1.plot(loss_history, label= 'Training Loss')  
-    ax1.plot(val_loss_history,label='Validation Loss')
-    ax1.set_title("Losses")
-    ax1.set_xlabel('Epochs')
-    ax1.set_ylabel('Loss')
-    ax1.legend()
+        fig = plt.figure(figsize=(20, 5))
+        ax1 = fig.add_subplot(1,2,1)
+        ax2 = fig.add_subplot(1,2,2)
 
-    ax2.plot(train_acc_history,label='Training accuracy')  
-    #ax2.plot(val_acc_history,label='Validation accuracy')
-    ax2.plot(val_auc_history,label='Validation AUC Score')
-    ax2.set_title("Accuracies")
-    ax2.set_xlabel('Epochs')
-    ax2.set_ylabel('Accuracy')
-    ax2.legend()
+        ax1.plot(loss_history, label= 'Training Loss')  
+        ax1.plot(val_loss_history,label='Validation Loss')
+        ax1.set_title("Losses")
+        ax1.set_xlabel('Epochs')
+        ax1.set_ylabel('Loss')
+        ax1.legend()
 
-    plt.show()  
-    plt.savefig(f'./training_'+ args.data_path.split('/')[-1] + '.png')
+        ax2.plot(train_acc_history,label='Training accuracy')  
+        #ax2.plot(val_acc_history,label='Validation accuracy')
+        ax2.plot(val_auc_history,label='Validation AUC Score')
+        ax2.set_title("Accuracies")
+        ax2.set_xlabel('Epochs')
+        ax2.set_ylabel('Accuracy')
+        ax2.legend()
+
+        plt.show()  
+        plt.savefig(f'./training_'+ fold + args.data_path.split('/')[-1] + '.png')
 
     del training_dataset, validation_dataset 
     gc.collect()
