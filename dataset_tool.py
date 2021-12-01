@@ -54,7 +54,7 @@ def open_image_folder(source_dir, *, max_images: Optional[int]):
 
     # Load labels.
     labels = {}
-    meta_fname = os.path.join(source_dir, 'labels.json')
+    meta_fname = os.path.join(source_dir, 'labels_without_val.json')
     if os.path.isfile(meta_fname):
         with open(meta_fname, 'r') as file:
             labels = json.load(file)['labels']
@@ -66,10 +66,10 @@ def open_image_folder(source_dir, *, max_images: Optional[int]):
     max_idx = maybe_min(len(input_images), max_images)
 
     def iterate_images():
-        for idx, fname in enumerate(input_images):
-            arch_fname = os.path.relpath(fname, source_dir)
-            arch_fname = arch_fname.replace('\\', '/').replace('.jpg','')
-            img = np.array(PIL.Image.open(fname))
+        for idx, fname in enumerate(labels.keys()):
+            #arch_fname = os.path.relpath(fname, source_dir)
+            arch_fname = fname #arch_fname.replace('\\', '/').replace('.jpg','')
+            img = np.array(PIL.Image.open(os.path.join(source_dir, fname + '.png')))
             yield dict(img=img, label=labels.get(arch_fname))
             if idx >= max_idx-1:
                 break
