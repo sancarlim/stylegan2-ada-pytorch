@@ -25,7 +25,7 @@ import datetime
 import random
 
 from sklearn.model_selection import StratifiedKFold, GroupKFold, train_test_split
-from sklearn.metrics import accuracy_score, roc_auc_score, confusion_matrix
+from sklearn.metrics import accuracy_score, roc_auc_score, confusion_matrix, f1_score
 
 from efficientnet_pytorch import EfficientNet
 
@@ -184,18 +184,24 @@ def plot_diagnosis(model, predict_image_path):
     plt.savefig(f'./prediction_{img_nb}.png')
 
 
-def create_split(source_dir):       
+def create_split(source_dir, unbalanced=False):       
     input_images = [str(f) for f in sorted(Path(source_dir).rglob('*')) if os.path.isfile(f)]
+    
     ind_0, ind_1 = [], []
     for i, f in enumerate(input_images):
         if f.split('.png')[0][-1] == '0':
             ind_0.append(i)
         else:
             ind_1.append(i) 
+
     ind_0=np.random.permutation(ind_0)
     ind_1=np.random.permutation(ind_1)
+    if unbalanced:
+        ind_1 = ind_1[:round(len(ind_1)*0.16)] #Train with 15% melanoma
+
     train_id_list, val_id_list, test_id_list = ind_0[:round(len(ind_0)*0.6)], ind_0[round(len(ind_0)*0.6):round(len(ind_0)*0.8)] , ind_0[round(len(ind_0)*0.8):]       
     train_id_1, val_id_1, test_id_1 = ind_1[:round(len(ind_1)*0.6)], ind_1[round(len(ind_1)*0.6):round(len(ind_1)*0.8)] , ind_1[round(len(ind_1)*0.8):] 
+    
     train_id_list = np.random.permutation(np.append(train_id_list,train_id_1))
     val_id_list = np.random.permutation(np.append(val_id_list, val_id_1))
     test_id_list = np.append(test_id_list, test_id_1)     
@@ -372,7 +378,7 @@ class Synth_Dataset(Dataset):
         self.input_images = [str(f) for f in sorted(Path(source_dir).rglob('*')) if os.path.isfile(f)]
             
         if test:
-            self.id_list = len(self.input_images)
+            self.id_list = range(len(self.input_images))
             if unbalanced:
                 self.input_images = self.input_images[:5954]
         
@@ -560,30 +566,32 @@ def test(model, test_loader):
         test_gt2 = torch.tensor(test_gt)
         test_accuracy = accuracy_score(test_gt2.cpu(), torch.round(test_pred2))
         test_auc_score = roc_auc_score(test_gt, test_pred)
+        test_f1_score = f1_score(test_gt, np.round(test_pred))
         
-    print("Test Accuracy: {}, ROC_AUC_score: {}".format(test_accuracy, test_auc_score))  
+    print("Test Accuracy: {:.5f}, ROC_AUC_score: {:.5f}, F1 score: {:.4f}".format(test_accuracy, test_auc_score, test_f1_score))  
 
     return test_pred, test_gt, test_accuracy
 
 
 if __name__ == "__main__":
     parser = ArgumentParser()
-    parser.add_argument("--data_path", type=str, default='/home/Data/generated')
+    parser.add_argument("--data_path", type=str, default='/home/Data/')
     parser.add_argument("--epochs", type=int, default='10')
+    parser.add_argument("--unbalanced", action='store_true', help='train with 15% melanoma')
     args = parser.parse_args()
-    """ 
+    
     df = pd.read_csv(os.path.join(args.data_path , 'melanoma_external_256/train_concat.csv'))
     test_df = pd.read_csv(os.path.join(args.data_path ,'melanoma_external_256/test.csv'))
     test_img_dir = os.path.join(args.data_path , 'melanoma_external_256/test/test/')
     train_img_dir = os.path.join(args.data_path ,'melanoma_external_256/train/train/')
-
+    
     train_split, valid_split = train_test_split (df, stratify=df.target, test_size = 0.20, random_state=42) 
 
     train_df=pd.DataFrame(train_split)
     validation_df=pd.DataFrame(valid_split)
-
+    
     print(len(validation_df))
-    print(len(train_df)) """
+    print(len(train_df)) 
 
     #skf = StratifiedKFold(n_splits=5)
     #for fold, (train_ix, val_ix) in enumerate(skf.split(df['image_name'].to_numpy(), df['target'].to_numpy())): 
@@ -616,7 +624,7 @@ if __name__ == "__main__":
                                                                 [0.229, 0.224, 0.225])])
 
     # Loading the datasets with the transforms previously defined
-    train_id, val_id, test_id = create_split(args.data_path)
+    train_id, val_id, test_id = create_split(args.data_path, unbalanced=args.unbalanced)
     training_dataset = Synth_Dataset(source_dir = args.data_path, transform = training_transforms, id_list = train_id) 
                                         #CustomDataset(df = train_df, img_dir = train_img_dir,  train = True, transforms = training_transforms )
 
@@ -624,10 +632,12 @@ if __name__ == "__main__":
                                         #CustomDataset(df = validation_df, img_dir = train_img_dir, train = True, transforms = training_transforms )
 
     testing_dataset = Synth_Dataset(source_dir = args.data_path, transform = testing_transforms, id_list = test_id)
+                        #CustomDataset(df = df, img_dir = train_img_dir,  train = True, transforms = testing_transforms ) 
 
     train_loader = torch.utils.data.DataLoader(training_dataset, batch_size=32, num_workers=4, shuffle=True)
     validate_loader = torch.utils.data.DataLoader(validation_dataset, batch_size=16, shuffle = False)
     test_loader = torch.utils.data.DataLoader(testing_dataset, batch_size=16, shuffle = False)
+    print(len(training_dataset), len(validation_dataset))
     print(len(train_loader))
     print(len(validate_loader))
     print(len(test_loader))
@@ -636,7 +646,6 @@ if __name__ == "__main__":
     model = Net(arch=arch)  
     model = model.to(device)
 
-    
     # If we need to freeze the pretrained model parameters to avoid backpropogating through them, turn to "False"
     for parameter in model.parameters():
         parameter.requires_grad = True
@@ -677,6 +686,7 @@ if __name__ == "__main__":
 
     
     ### TESTING THE NETWORK ###
+    #model_path = '/home/stylegan2-ada-pytorch/models_trained_with_synth/melanoma_model_unbal_0.9999899287601407.pth'
     model.load_state_dict(torch.load(model_path))
     model.eval()
     model.to(device)
@@ -686,4 +696,4 @@ if __name__ == "__main__":
     confussion_matrix(test_gt, test_pred, test_accuracy)
             
     # Plot diagnosis 
-    plot_diagnosis(model, os.path.join(args.data_path, 'seed9995_1.png'))
+    #plot_diagnosis(model, os.path.join(args.data_path, 'seed9995_1.png'))

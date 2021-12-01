@@ -5,9 +5,10 @@ from typing import List
 import matplotlib.pyplot as plt  
 from PIL import Image 
 import torch
+import torchtoolbox.transform as transforms
 from efficientnet_pytorch import EfficientNet
 from argparse import ArgumentParser 
-from melanoma_cnn_efficientnet import Net 
+from melanoma_cnn_efficientnet import Net, Synth_Dataset, test 
 
 def num_range(s: str) -> List[int]:
     '''Accept either a comma separated list of numbers 'a,b,c' or a range 'a-c' and return as a list of ints.'''
@@ -132,8 +133,9 @@ def plot_diagnosis(predict_image_path, model):
 
 if __name__ == "__main__":
     parser = ArgumentParser()
-    parser.add_argument("--path", type=str, default='/home/Data/generated/seed9984_1.png', help="Path to image to predict")
+    #parser.add_argument("--path", type=str, default='/home/Data/generated/seed9984_1.png', help="Path to image to predict")
     parser.add_argument('--seeds', type=num_range, help='List of random seeds Ex. 0-3 or 0,1,2')
+    parser.add_argument("--data_path", type=str, default='/home/Data/generated')
     args = parser.parse_args()
 
     # Setting up GPU for processing or CPU if GPU isn't available
@@ -142,9 +144,20 @@ if __name__ == "__main__":
     # Load model
     arch = EfficientNet.from_pretrained('efficientnet-b2')
     model = Net(arch=arch)  
-    model.load_state_dict(torch.load('/home/stylegan2-ada-pytorch/melanoma_model_0.9866159851897974.pth'))
+    model.load_state_dict(torch.load('/home/stylegan2-ada-pytorch/melanoma_model_0.9975_generated-balanced.pth'))
     model.eval()
     model.to(device)
+
+    # TEST
+    testing_transforms = transforms.Compose([transforms.Resize(256),
+                                            transforms.CenterCrop(256),
+                                            transforms.ToTensor(),
+                                            transforms.Normalize([0.485, 0.456, 0.406], 
+                                                                [0.229, 0.224, 0.225])])
+    testing_dataset = Synth_Dataset(source_dir = args.data_path, transform = testing_transforms, 
+                                    id_list = None, test=True, unbalanced=False)    
+    test_loader = torch.utils.data.DataLoader(testing_dataset, batch_size=16, shuffle = False)                                                    
+    test_pred, test_gt, test_accuracy = test(model, test_loader)  
 
     # Plot diagnosis 
     for seed_idx, seed in enumerate(args.seeds):
