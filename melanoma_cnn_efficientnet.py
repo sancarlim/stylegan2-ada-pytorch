@@ -382,7 +382,7 @@ class Synth_Dataset(Dataset):
             self.input_images = input_img
         
         if unbalanced:
-            ind_0, ind_1 = create_split(args.data_path, unbalanced=unbalanced)
+            ind_0, ind_1 = create_split(args.train_data_path, unbalanced=unbalanced)
             ind=np.append(ind_0, ind_1)
             self.input_images = [self.input_images[i] for i in ind]
 
