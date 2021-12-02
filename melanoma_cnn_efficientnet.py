@@ -593,10 +593,10 @@ if __name__ == "__main__":
 
     # For training with ISIC dataset
 
-    df = pd.read_csv(os.path.join(args.test_data_path , 'melanoma_external_256/train_concat.csv'))
+    df = pd.read_csv(os.path.join(args.test_data_path , 'train_concat.csv'))
     # test_df = pd.read_csv(os.path.join(args.data_path ,'melanoma_external_256/test.csv'))
     # test_img_dir = os.path.join(args.data_path , 'melanoma_external_256/test/test/')
-    train_img_dir = os.path.join(args.test_data_path ,'melanoma_external_256/train/train/')
+    train_img_dir = os.path.join(args.test_data_path ,'train/train/')
     
     # train_split, valid_split = train_test_split (df, stratify=df.target, test_size = 0.20, random_state=42) 
 
