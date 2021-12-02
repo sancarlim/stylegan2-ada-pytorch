@@ -380,6 +380,11 @@ class Synth_Dataset(Dataset):
             self.input_images = [str(f) for f in sorted(Path(source_dir).rglob('*')) if os.path.isfile(f)]
         else:
             self.input_images = input_img
+        
+        if unbalanced:
+            ind_0, ind_1 = create_split(args.data_path, unbalanced=unbalanced)
+            ind=np.append(ind_0, ind_1)
+            self.input_images = [self.input_images[i] for i in ind]
 
         self.id_list = id_list if id_list else range(len(self.input_images))
             
@@ -665,7 +670,7 @@ if __name__ == "__main__":
 
     #    # Loading the datasets with the transforms previously defined
     #    #train_id, val_id, test_id = create_split(args.data_path, unbalanced=args.unbalanced)
-    training_dataset = Synth_Dataset(source_dir = args.train_data_path, transform = training_transforms, id_list = train_ix)  # CustomDataset(df = train_df_res, img_dir = train_img_dir,  train = True, transforms = training_transforms )
+    training_dataset = Synth_Dataset(source_dir = args.train_data_path, transform = training_transforms, id_list = None, unbalanced=args.unbalanced)  # CustomDataset(df = train_df_res, img_dir = train_img_dir,  train = True, transforms = training_transforms )
                        
                                         
     validation_dataset = CustomDataset(df = df, img_dir = train_img_dir, train = True, transforms = training_transforms )
