@@ -162,7 +162,7 @@ def confussion_matrix(test, test_pred, test_accuracy):
     plt.ylabel('True label')
     plt.xlabel('Predicted label')
     plt.show()
-    bal_unbal = args.data_path.split('/')[-1]
+    bal_unbal = args.train_data_path.split('/')[-1]
     plt.savefig(f'./conf_matrix_{test_accuracy:.4f}_{bal_unbal}.png')
 
 def plot_diagnosis(model, predict_image_path):
@@ -498,7 +498,7 @@ def train(model, train_loader, validate_loader, k_fold = 0, epochs = 10, es_pati
         if val_f1 > best_val:
             best_val = val_f1
             patience = es_patience  # Resetting patience since we have new best validation accuracy
-            bal_unbal = args.data_path.split('/')[-1]
+            bal_unbal = args.train_data_path.split('/')[-1]
             model_path = f'./melanoma_model_{k_fold}_{best_val:.4f}_{bal_unbal}.pth'
             torch.save(model.state_dict(), model_path)  # Saving current best model
             print(f'Saving model in {model_path}')
@@ -584,7 +584,8 @@ def test(model, test_loader):
 
 if __name__ == "__main__":
     parser = ArgumentParser()
-    parser.add_argument("--data_path", type=str, default='/home/Data/')
+    parser.add_argument("--train_data_path", type=str, default='/home/Data/')
+    parser.add_argument("--test_data_path", type=str, default='/home/Data/')
     parser.add_argument("--epochs", type=int, default='10')
     parser.add_argument("--kfold", type=int, default='3', help='number of folds for stratisfied kfold')
     parser.add_argument("--unbalanced", action='store_true', help='train with 15% melanoma')
@@ -592,10 +593,10 @@ if __name__ == "__main__":
 
     # For training with ISIC dataset
 
-    df = pd.read_csv(os.path.join(args.data_path , 'melanoma_external_256/train_concat.csv'))
+    df = pd.read_csv(os.path.join(args.test_data_path , 'melanoma_external_256/train_concat.csv'))
     # test_df = pd.read_csv(os.path.join(args.data_path ,'melanoma_external_256/test.csv'))
     # test_img_dir = os.path.join(args.data_path , 'melanoma_external_256/test/test/')
-    train_img_dir = os.path.join(args.data_path ,'melanoma_external_256/train/train/')
+    train_img_dir = os.path.join(args.test_data_path ,'melanoma_external_256/train/train/')
     
     # train_split, valid_split = train_test_split (df, stratify=df.target, test_size = 0.20, random_state=42) 
 
@@ -664,7 +665,7 @@ if __name__ == "__main__":
 
     #    # Loading the datasets with the transforms previously defined
     #    #train_id, val_id, test_id = create_split(args.data_path, unbalanced=args.unbalanced)
-    training_dataset = Synth_Dataset(source_dir = args.data_path, transform = training_transforms, id_list = train_ix)  # CustomDataset(df = train_df_res, img_dir = train_img_dir,  train = True, transforms = training_transforms )
+    training_dataset = Synth_Dataset(source_dir = args.train_data_path, transform = training_transforms, id_list = train_ix)  # CustomDataset(df = train_df_res, img_dir = train_img_dir,  train = True, transforms = training_transforms )
                        
                                         
     validation_dataset = CustomDataset(df = df, img_dir = train_img_dir, train = True, transforms = training_transforms )
@@ -715,7 +716,7 @@ if __name__ == "__main__":
     ax2.legend()
 
     plt.show()  
-    plt.savefig(f'./training_'+ str(fold) + args.data_path.split('/')[-1] + '.png')
+    plt.savefig(f'./training_'+ str(fold) + args.train_data_path.split('/')[-1] + '.png')
 
     del training_dataset, validation_dataset 
     gc.collect()
