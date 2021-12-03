@@ -5,7 +5,7 @@ import random
 import json
 
 filename = 'dataset.json'
-directory = '/home/Data/processed_dataset_256'
+directory = '/workspace/melanoma_isic_dataset/stylegan2-ada-pytorch/processed_dataset_256'
 
 with open(os.path.join(directory, filename)) as file:
     data = json.load(file)['labels']
