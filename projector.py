@@ -21,6 +21,7 @@ import torch.nn.functional as F
 
 import dnnlib
 import legacy
+from tqdm import tqdm
 
 def project(
     G,
@@ -35,6 +36,7 @@ def project(
     noise_ramp_length          = 0.75,
     regularize_noise_weight    = 1e5,
     verbose                    = False,
+    class_label                = 0,
     device: torch.device
 ):
     assert target.shape == (G.img_channels, G.img_resolution, G.img_resolution)
@@ -48,7 +50,18 @@ def project(
     # Compute w stats.
     logprint(f'Computing W midpoint and stddev using {w_avg_samples} samples...')
     z_samples = np.random.RandomState(123).randn(w_avg_samples, G.z_dim)
-    w_samples = G.mapping(torch.from_numpy(z_samples).to(device), None)  # [N, L, C]
+    # no conditional - w_samples = G.mapping(torch.from_numpy(z_samples).to(device), None)  # [N, L, C]
+
+    # para los conditional!
+    # https: // github.com / NVlabs / stylegan2 - ada - pytorch / issues / 148
+    label = int(class_label)
+    onehot = torch.tensor(np.zeros([1, 2], dtype=np.int64))
+    onehot[0][label] = 1
+    #print(onehot)
+    label = onehot.cuda()
+    #label = torch.tensor([[0, 0, 0, 0, 0, 0, 1]]).cuda()
+    w_samples = G.mapping(torch.from_numpy(z_samples).to(device), torch.cat([label] * w_avg_samples, dim=0))
+
     w_samples = w_samples[:, :1, :].cpu().numpy().astype(np.float32)       # [N, 1, C]
     w_avg = np.mean(w_samples, axis=0, keepdims=True)      # [1, 1, C]
     w_std = (np.sum((w_samples - w_avg) ** 2) / w_avg_samples) ** 0.5
@@ -76,7 +89,8 @@ def project(
         buf[:] = torch.randn_like(buf)
         buf.requires_grad = True
 
-    for step in range(num_steps):
+    # for step in range(num_steps):
+    for step in tqdm(range(num_steps)):
         # Learning rate schedule.
         t = step / num_steps
         w_noise_scale = w_std * initial_noise_factor * max(0.0, 1.0 - t / noise_ramp_length) ** 2
@@ -117,7 +131,8 @@ def project(
         optimizer.zero_grad(set_to_none=True)
         loss.backward()
         optimizer.step()
-        logprint(f'step {step+1:>4d}/{num_steps}: dist {dist:<4.2f} loss {float(loss):<5.2f}')
+
+        #logprint(f'step {step+1:>4d}/{num_steps}: dist {dist:<4.2f} loss {float(loss):<5.2f}')
 
         # Save projected W for each optimization step.
         w_out[step] = w_opt.detach()[0]
@@ -137,15 +152,17 @@ def project(
 @click.option('--target', 'target_fname', help='Target image file to project to', required=True, metavar='FILE')
 @click.option('--num-steps',              help='Number of optimization steps', type=int, default=1000, show_default=True)
 @click.option('--seed',                   help='Random seed', type=int, default=303, show_default=True)
-@click.option('--save-video',             help='Save an mp4 video of optimization progress', type=bool, default=True, show_default=True)
+@click.option('--save-video',             help='Save an mp4 video of optimization progress', type=bool, default=False, show_default=True)
 @click.option('--outdir',                 help='Where to save the output images', required=True, metavar='DIR')
+@click.option('--class_label',                  help='label', required=True)
 def run_projection(
     network_pkl: str,
     target_fname: str,
     outdir: str,
     save_video: bool,
     seed: int,
-    num_steps: int
+    num_steps: int,
+    class_label: int
 ):
     """Project given image to the latent space of pretrained network pickle.
 
@@ -159,7 +176,7 @@ def run_projection(
     torch.manual_seed(seed)
 
     # Load networks.
-    print('Loading networks from "%s"...' % network_pkl)
+    # print('Loading networks from "%s"...' % network_pkl)
     device = torch.device('cuda')
     with dnnlib.util.open_url(network_pkl) as fp:
         G = legacy.load_network_pkl(fp)['G_ema'].requires_grad_(False).to(device) # type: ignore
@@ -179,30 +196,43 @@ def run_projection(
         target=torch.tensor(target_uint8.transpose([2, 0, 1]), device=device), # pylint: disable=not-callable
         num_steps=num_steps,
         device=device,
-        verbose=True
+        verbose=False,
+        class_label=class_label
     )
-    print (f'Elapsed: {(perf_counter()-start_time):.1f} s')
+    #print (f'Elapsed: {(perf_counter()-start_time):.1f} s')
 
     # Render debug output: optional video and projected image and W vector.
     os.makedirs(outdir, exist_ok=True)
     if save_video:
-        video = imageio.get_writer(f'{outdir}/proj.mp4', mode='I', fps=10, codec='libx264', bitrate='16M')
+        #video = imageio.get_writer(f'{outdir}/proj.mp4', mode='I', fps=10, codec='libx264', bitrate='16M')
+        videofilename = outdir + '/' + os.path.basename(target_fname).split('.')[0] + '.class.' + str(class_label) + '.mp4'
+        video = imageio.get_writer(videofilename, mode='I', fps=10, codec='libx264', bitrate='16M')
         print (f'Saving optimization progress video "{outdir}/proj.mp4"')
+        indexframe = 0
         for projected_w in projected_w_steps:
             synth_image = G.synthesis(projected_w.unsqueeze(0), noise_mode='const')
             synth_image = (synth_image + 1) * (255/2)
             synth_image = synth_image.permute(0, 2, 3, 1).clamp(0, 255).to(torch.uint8)[0].cpu().numpy()
             video.append_data(np.concatenate([target_uint8, synth_image], axis=1))
+            print('writing frame ', indexframe)
+            indexframe = indexframe + 1
         video.close()
 
     # Save final projected frame and W vector.
-    target_pil.save(f'{outdir}/target.png')
+    #target_pil.save(f'{outdir}/target.png')
+    target_pil.save(f'{outdir}/'+os.path.basename(target_fname).split('.')[0]+'.class.' + str(class_label) +'.from.png')
     projected_w = projected_w_steps[-1]
     synth_image = G.synthesis(projected_w.unsqueeze(0), noise_mode='const')
     synth_image = (synth_image + 1) * (255/2)
     synth_image = synth_image.permute(0, 2, 3, 1).clamp(0, 255).to(torch.uint8)[0].cpu().numpy()
-    PIL.Image.fromarray(synth_image, 'RGB').save(f'{outdir}/proj.png')
-    np.savez(f'{outdir}/projected_w.npz', w=projected_w.unsqueeze(0).cpu().numpy())
+    #PIL.Image.fromarray(synth_image, 'RGB').save(f'{outdir}/proj.png')
+    PIL.Image.fromarray(synth_image, 'RGB').save(f'{outdir}/'+os.path.basename(target_fname).split('.')[0]+'.class.' + str(class_label) +'.to.png')
+    npzfilename = f'{outdir}/' + os.path.basename(target_fname).split('.')[0] +'.class.' + str(class_label) + '.npz'
+    #np.savez(f'{outdir}/projected_w.npz', w=projected_w.unsqueeze(0).cpu().numpy())
+    np.savez(npzfilename, w=projected_w.unsqueeze(0).cpu().numpy())
+
+    txtfilename = f'{outdir}/'+os.path.basename(target_fname).split('.')[0]+'.class.' + str(class_label) +'.txt'
+    np.savetxt(txtfilename, projected_w[0].cpu().numpy(), newline=" ") # save 1st element
 
 #----------------------------------------------------------------------------
 
