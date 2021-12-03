@@ -17,7 +17,7 @@ with open(os.path.join(directory, filename)) as file:
         execute = "python projector.py "
         execute = execute + " --outdir=./projector"
         execute = execute + " --target=" + img_dir
-        execute = execute + " --network=/home/stylegan2-ada-pytorch/training_runs/network-snapshot-020000.pkl"
+        execute = execute + " --network=/workspace/melanoma_isic_dataset/stylegan2-ada-pytorch/training_runs/network-snapshot-020000.pkl"
         execute = execute + " --class_label " + str(label)
         execute = execute + " --num-steps 1000"
 
