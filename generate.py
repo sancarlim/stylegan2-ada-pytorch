@@ -38,6 +38,7 @@ def num_range(s: str) -> List[int]:
 @click.pass_context
 @click.option('--network', 'network_pkl', help='Network pickle filename', required=True)
 @click.option('--seeds', type=num_range, help='List of random seeds')
+@click.option('--num_imgs', type=int, help='Number of images to generate with random seeds if seeds=None')
 @click.option('--trunc', 'truncation_psi', type=float, help='Truncation psi', default=1, show_default=True)
 @click.option('--class', 'class_idx', type=int, help='Class label (unconditional if not specified)')
 @click.option('--noise-mode', help='Noise mode', type=click.Choice(['const', 'random', 'none']), default='const', show_default=True)
@@ -50,6 +51,7 @@ def generate_images(
     truncation_psi: float,
     noise_mode: str,
     outdir: str,
+    num_imgs: Optional[int],
     class_idx: Optional[int],
     projected_w: Optional[str]
 ):
@@ -100,7 +102,8 @@ def generate_images(
         return
 
     if seeds is None:
-        ctx.fail('--seeds option is required when not using --projected-w')
+        seeds=list(np.random.randint(0,1000000,num_imgs))
+        #ctx.fail('--seeds option is required when not using --projected-w')
 
     # Labels.
     label = torch.zeros([1, G.c_dim], device=device)
