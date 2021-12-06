@@ -5,16 +5,21 @@ import random
 import json
 from argparse import ArgumentParser 
 
+random.seed(0)
+os.environ['PYTHONHASHSEED'] = str(0)
+np.random.seed(0)
+
 parser = ArgumentParser()
 parser.add_argument("--filename", type=str, default='dataset.json')
 parser.add_argument("--directory", type=str, default='/workspace/melanoma_isic_dataset/stylegan2-ada-pytorch/processed_dataset_256')
 parser.add_argument("--task", type=str, default='project', help='Choose task project/generate',
                             choices=['generate', 'project'])
 
-parser.add_argument('--network', 'network_pkl', help='Network pickle filename', default=None)
+parser.add_argument('--network', help='Network pickle filename', default=None)
 parser.add_argument('--trunc', type=float, help='Truncation psi', default=1)
-parser.add_argument('--class', 'class_idx', type=int, help='Class label (unconditional if not specified)')
-parser.add_argumentn('--outdir', help='Where to save the output images', type=str, default=None, metavar='DIR')
+parser.add_argument('--class_idx',type=int, help='Class label (unconditional if not specified)')
+parser.add_argument('--num_imgs',type=int)
+parser.add_argument('--outdir', help='Where to save the output images', type=str, default=None)
  
 args = parser.parse_args()
 
@@ -43,7 +48,8 @@ else:
     execute = "python generate.py " 
     execute = execute + " --outdir=" + args.outdir
     execute = execute + " --trunc=" + str(args.trunc)
-    execute = execute + " --network" + args.network 
-    execute = execute + " --class" + str(args.class_idx)
+    execute = execute + " --network=" + args.network 
+    execute = execute + " --class=" + str(args.class_idx)
+    execute = execute + " --seeds=" + str(np.random.randint(0,1000000,args.num_imgs)).replace('[','').replace(']','').replace(' ',',')
 
     os.system(execute)

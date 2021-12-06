@@ -162,6 +162,7 @@ def confussion_matrix(test, test_pred, test_accuracy):
     plt.ylabel('True label')
     plt.xlabel('Predicted label')
     plt.show()
+    
     bal_unbal = args.train_data_path.split('/')[-1]
     plt.savefig(f'./conf_matrix_{test_accuracy:.4f}_{bal_unbal}.png')
 
@@ -589,8 +590,8 @@ def test(model, test_loader):
 
 if __name__ == "__main__":
     parser = ArgumentParser()
-    parser.add_argument("--train_data_path", type=str, default='/home/Data/')
-    parser.add_argument("--test_data_path", type=str, default='/home/Data/')
+    parser.add_argument("--train_data_path", type=str, default='/home/Data/generated')
+    parser.add_argument("--test_data_path", type=str, default='/home/Data/melanoma_external_256')
     parser.add_argument("--epochs", type=int, default='10')
     parser.add_argument("--kfold", type=int, default='3', help='number of folds for stratisfied kfold')
     parser.add_argument("--unbalanced", action='store_true', help='train with 15% melanoma')
