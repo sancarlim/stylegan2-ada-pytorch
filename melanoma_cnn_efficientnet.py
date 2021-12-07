@@ -202,7 +202,7 @@ def create_split(source_dir, unbalanced=False):
     
     
     train_id_list, val_id_list  = ind_0[:round(len(ind_0)*0.8)],  ind_0[round(len(ind_0)*0.8):]       #ind_0[round(len(ind_0)*0.6):round(len(ind_0)*0.8)] ,
-    train_id_1, val_id_1 = ind_1[:round(len(ind_1)*0.)],  ind_1[round(len(ind_1)*0.8):] #ind_1[round(len(ind_1)*0.6):round(len(ind_1)*0.8)] ,
+    train_id_1, val_id_1 = ind_1[:round(len(ind_1)*0.8)],  ind_1[round(len(ind_1)*0.8):] #ind_1[round(len(ind_1)*0.6):round(len(ind_1)*0.8)] ,
     
     train_id_list = np.random.permutation(np.append(train_id_list,train_id_1))
     val_id_list = np.random.permutation(np.append(val_id_list, val_id_1))
