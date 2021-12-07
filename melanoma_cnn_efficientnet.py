@@ -163,7 +163,7 @@ def confussion_matrix(test, test_pred, test_accuracy):
     plt.xlabel('Predicted label')
     plt.show()
     
-    bal_unbal = args.train_data_path.split('/')[-1]
+    bal_unbal = args.syn_data_path.split('/')[-1]
     plt.savefig(f'./conf_matrix_{test_accuracy:.4f}_{bal_unbal}.png')
 
 def plot_diagnosis(model, predict_image_path):
@@ -200,15 +200,15 @@ def create_split(source_dir, unbalanced=False):
     if unbalanced:
         ind_1 = ind_1[:round(len(ind_1)*0.16)] #Train with 15% melanoma
     
-    """
-    train_id_list, val_id_list, test_id_list = ind_0[:round(len(ind_0)*0.6)], ind_0[round(len(ind_0)*0.6):round(len(ind_0)*0.8)] , ind_0[round(len(ind_0)*0.8):]       
-    train_id_1, val_id_1, test_id_1 = ind_1[:round(len(ind_1)*0.6)], ind_1[round(len(ind_1)*0.6):round(len(ind_1)*0.8)] , ind_1[round(len(ind_1)*0.8):] 
+    
+    train_id_list, val_id_list  = ind_0[:round(len(ind_0)*0.8)],  ind_0[round(len(ind_0)*0.8):]       #ind_0[round(len(ind_0)*0.6):round(len(ind_0)*0.8)] ,
+    train_id_1, val_id_1 = ind_1[:round(len(ind_1)*0.)],  ind_1[round(len(ind_1)*0.8):] #ind_1[round(len(ind_1)*0.6):round(len(ind_1)*0.8)] ,
     
     train_id_list = np.random.permutation(np.append(train_id_list,train_id_1))
     val_id_list = np.random.permutation(np.append(val_id_list, val_id_1))
-    test_id_list = np.append(test_id_list, test_id_1)     
-    """
-    return ind_0, ind_1 #train_id_list, val_id_list, test_id_list
+    #test_id_list = np.append(test_id_list, test_id_1)     
+    
+    return train_id_list, val_id_list  #test_id_list
 
 
 class AdvancedHairAugmentation:
@@ -383,11 +383,11 @@ class Synth_Dataset(Dataset):
             self.input_images = input_img
         
         if unbalanced:
-            ind_0, ind_1 = create_split(args.train_data_path, unbalanced=unbalanced)
+            ind_0, ind_1 = create_split(args.syn_data_path, unbalanced=unbalanced)
             ind=np.append(ind_0, ind_1)
             self.input_images = [self.input_images[i] for i in ind]
 
-        self.id_list = id_list if id_list else range(len(self.input_images))
+        self.id_list = id_list if id_list is not None else range(len(self.input_images))
             
         if test:
             if unbalanced:
@@ -435,7 +435,7 @@ class Net(nn.Module):
 
 
 ### TRAINING ###
-def train(model, train_loader, validate_loader, k_fold = 0, epochs = 10, es_patience = 3):
+def train(model, train_loader, validate_loader, validate_loader_reals, k_fold = 0, epochs = 10, es_patience = 3):
     # Training model
     print('Starts training...')
 
@@ -452,6 +452,9 @@ def train(model, train_loader, validate_loader, k_fold = 0, epochs = 10, es_pati
     val_acc_history=[] 
     val_auc_history=[]
     val_f1_history=[]
+
+    val_loss_r_history=[] 
+    val_auc_r_history=[]
         
     patience = es_patience
     Total_start_time = time.time()  
@@ -486,6 +489,7 @@ def train(model, train_loader, validate_loader, k_fold = 0, epochs = 10, es_pati
         train_acc = correct / len(training_dataset)
         
         val_loss, val_auc_score, val_accuracy, val_f1 = val(model, validate_loader, criterion)
+        val_loss_r, val_auc_score_r, val_accuracy_r, val_f1_r = val(model, validate_loader_reals, criterion)
         
         training_time = str(datetime.timedelta(seconds=time.time() - start_time))[:7]
             
@@ -504,7 +508,7 @@ def train(model, train_loader, validate_loader, k_fold = 0, epochs = 10, es_pati
         if val_f1 > best_val:
             best_val = val_f1
             patience = es_patience  # Resetting patience since we have new best validation accuracy
-            bal_unbal = args.train_data_path.split('/')[-1]
+            bal_unbal = args.syn_data_path.split('/')[-1]
             model_path = f'./melanoma_model_{k_fold}_{best_val:.4f}_{bal_unbal}.pth'
             torch.save(model.state_dict(), model_path)  # Saving current best model
             print(f'Saving model in {model_path}')
@@ -521,13 +525,16 @@ def train(model, train_loader, validate_loader, k_fold = 0, epochs = 10, es_pati
         val_auc_history.append(val_auc_score)
         val_f1_history.append(val_f1)
 
+        val_loss_r_history.append(val_loss_r)  
+        val_auc_r_history.append(val_auc_score_r)
+
     total_training_time = str(datetime.timedelta(seconds=time.time() - Total_start_time  ))[:7]                  
     print("Total Training Time: {}".format(total_training_time))
 
     del train_loader, validate_loader, images
     gc.collect()
 
-    return loss_history, train_acc_history, val_auc_history, val_loss_history, val_f1_history, model_path
+    return loss_history, train_acc_history, val_auc_history, val_loss_history, val_f1_history, model_path, val_loss_r_history, val_auc_r_history
                 
 def val(model, validate_loader, criterion):          
     model.eval()
@@ -590,8 +597,8 @@ def test(model, test_loader):
 
 if __name__ == "__main__":
     parser = ArgumentParser()
-    parser.add_argument("--train_data_path", type=str, default='/home/Data/generated')
-    parser.add_argument("--test_data_path", type=str, default='/home/Data/melanoma_external_256')
+    parser.add_argument("--syn_data_path", type=str, default='/home/Data/generated')
+    parser.add_argument("--real_data_path", type=str, default='/home/Data/melanoma_external_256')
     parser.add_argument("--epochs", type=int, default='10')
     parser.add_argument("--kfold", type=int, default='3', help='number of folds for stratisfied kfold')
     parser.add_argument("--unbalanced", action='store_true', help='train with 15% melanoma')
@@ -599,21 +606,18 @@ if __name__ == "__main__":
 
     # For training with ISIC dataset
 
-    df = pd.read_csv(os.path.join(args.test_data_path , 'train_concat.csv'))
+    df = pd.read_csv(os.path.join(args.real_data_path , 'train_concat.csv'))
     # test_df = pd.read_csv(os.path.join(args.data_path ,'melanoma_external_256/test.csv'))
     # test_img_dir = os.path.join(args.data_path , 'melanoma_external_256/test/test/')
-    train_img_dir = os.path.join(args.test_data_path ,'train/train/')
+    train_img_dir = os.path.join(args.real_data_path ,'train/train/')
     
-    # train_split, valid_split = train_test_split (df, stratify=df.target, test_size = 0.20, random_state=42) 
+    train_split, valid_split = train_test_split (df, stratify=df.target, test_size = 0.20, random_state=42) 
 
-    # train_df=pd.DataFrame(train_split)
-    # validation_df=pd.DataFrame(valid_split)
+    train_df=pd.DataFrame(train_split)
+    validation_df=pd.DataFrame(valid_split)
 
     # under_sampler = RandomUnderSampler(random_state=42)
     # train_df_res, _ = under_sampler.fit_resample(train_df, train_df.target)
-    
-    # print(len(validation_df))
-    # print(len(train_df)) 
     
     # Defining transforms for the training, validation, and testing sets
     training_transforms = transforms.Compose([#Microscope(),
@@ -659,9 +663,7 @@ if __name__ == "__main__":
         y = [y[i] for i in ind]
     train_img, test_img, train_gt, test_gt = train_test_split(input_images, y, stratify=y, test_size=0.2, random_state=3)
     """
-    #testing_dataset = Synth_Dataset(source_dir = args.data_path, transform = testing_transforms, id_list = range(len(test_gt)), input_img=test_img)
-    testing_dataset = CustomDataset(df = df, img_dir = train_img_dir,  train = True, transforms = testing_transforms ) 
-
+   
     fold=0
     #skf = StratifiedKFold(n_splits=args.kfold)
     #for fold, (train_ix, val_ix) in enumerate(skf.split(train_img, train_gt)): 
@@ -671,15 +673,21 @@ if __name__ == "__main__":
 
     #    # Loading the datasets with the transforms previously defined
     #    #train_id, val_id, test_id = create_split(args.data_path, unbalanced=args.unbalanced)
-    training_dataset = Synth_Dataset(source_dir = args.train_data_path, transform = training_transforms, id_list = None, unbalanced=args.unbalanced)  # CustomDataset(df = train_df_res, img_dir = train_img_dir,  train = True, transforms = training_transforms )
                        
-                                        
-    validation_dataset = CustomDataset(df = df, img_dir = train_img_dir, train = True, transforms = training_transforms )
-                        #Synth_Dataset(source_dir = args.data_path, transform = training_transforms, id_list = val_ix) 
-                        
+                                   
+    # training_dataset = Synth_Dataset(source_dir = args.syn_data_path, transform = training_transforms, id_list = None, unbalanced=args.unbalanced)  # CustomDataset(df = train_df_res, img_dir = train_img_dir,  train = True, transforms = training_transforms )
+    validation_dataset_real = CustomDataset(df = validation_df, img_dir = train_img_dir, train = True, transforms = training_transforms )
+    train_id, val_id = create_split(args.syn_data_path, unbalanced=args.unbalanced)
+    training_dataset = Synth_Dataset(source_dir = args.syn_data_path, transform = training_transforms, id_list = train_id, unbalanced=args.unbalanced)  # CustomDataset(df = train_df_res, img_dir = train_img_dir,  train = True, transforms = training_transforms )
+    validation_dataset = Synth_Dataset(source_dir = args.syn_data_path, transform = training_transforms, id_list = val_id) 
+
+    #testing_dataset = Synth_Dataset(source_dir = args.data_path, transform = testing_transforms, id_list = range(len(test_gt)), input_img=test_img)
+    testing_dataset = CustomDataset(df = validation_df, img_dir = train_img_dir,  train = True, transforms = testing_transforms ) 
+                   
 
     train_loader = torch.utils.data.DataLoader(training_dataset, batch_size=32, num_workers=4, shuffle=True)
     validate_loader = torch.utils.data.DataLoader(validation_dataset, batch_size=16, shuffle = False)
+    validate_loader_real = torch.utils.data.DataLoader(validation_dataset_real, batch_size=16, shuffle = False)
     test_loader = torch.utils.data.DataLoader(testing_dataset, batch_size=16, shuffle = False)
     print(len(training_dataset), len(validation_dataset))
     print(len(train_loader),len(validate_loader),len(test_loader))
@@ -699,7 +707,7 @@ if __name__ == "__main__":
         p.numel() for p in model.parameters() if p.requires_grad)
     print(f'{total_trainable_params:,} training parameters.')
 
-    loss_history, train_acc_history, val_auc_history, val_loss_history, val_f1_history, model_path = train(model, train_loader, validate_loader, fold, epochs=args.epochs, es_patience=3)
+    loss_history, train_acc_history, val_auc_history, val_loss_history, val_f1_history, model_path, val_loss_r_history, val_auc_r_history = train(model, train_loader, validate_loader, validate_loader_real, fold, epochs=args.epochs, es_patience=3)
 
     fig = plt.figure(figsize=(20, 5))
     ax1 = fig.add_subplot(1,2,1)
@@ -707,6 +715,7 @@ if __name__ == "__main__":
 
     ax1.plot(loss_history, label= 'Training Loss')  
     ax1.plot(val_loss_history,label='Validation Loss')
+    ax1.plot(val_loss_r_history,label='Validation Reals Loss')
     ax1.set_title("Losses")
     ax1.set_xlabel('Epochs')
     ax1.set_ylabel('Loss')
@@ -715,6 +724,7 @@ if __name__ == "__main__":
     ax2.plot(train_acc_history,label='Training accuracy')  
     #ax2.plot(val_acc_history,label='Validation accuracy')
     ax2.plot(val_auc_history,label='Validation AUC Score')
+    ax2.plot(val_auc_r_history,label='Validation AUC Score')
     ax2.plot(val_f1_history,label='Validation F1 Score')
     ax2.set_title("Accuracies")
     ax2.set_xlabel('Epochs')
@@ -722,7 +732,7 @@ if __name__ == "__main__":
     ax2.legend()
 
     plt.show()  
-    plt.savefig(f'./training_'+ str(fold) + args.train_data_path.split('/')[-1] + '.png')
+    plt.savefig(f'./training_'+ str(fold) + args.syn_data_path.split('/')[-1] + '.png')
 
     del training_dataset, validation_dataset 
     gc.collect()
