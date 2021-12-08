@@ -190,7 +190,7 @@ def create_split(source_dir, unbalanced=False):
     
     ind_0, ind_1 = [], []
     for i, f in enumerate(input_images):
-        if f.split('.png')[0][-1] == '0':
+        if f.split('.jpg')[0][-1] == '0':
             ind_0.append(i)
         else:
             ind_1.append(i) 
