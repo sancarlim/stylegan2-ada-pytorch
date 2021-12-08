@@ -402,7 +402,7 @@ class Synth_Dataset(Dataset):
         image_fn = self.input_images[idx]   #f'{idx:04d}_{idx%2}'
 
         img = np.array(Image.open(image_fn))
-        target = int(image_fn.split('_')[-1].replace('.png',''))  
+        target = int(image_fn.split('_')[-1].replace('.jpg',''))  
         
         if self.transform is not None:
             img = self.transform(img)
