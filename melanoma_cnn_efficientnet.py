@@ -204,8 +204,8 @@ def create_split(source_dir, unbalanced=False):
     train_id_list, val_id_list  = ind_0[:round(len(ind_0)*0.8)],  ind_0[round(len(ind_0)*0.8):]       #ind_0[round(len(ind_0)*0.6):round(len(ind_0)*0.8)] ,
     train_id_1, val_id_1 = ind_1[:round(len(ind_1)*0.8)],  ind_1[round(len(ind_1)*0.8):] #ind_1[round(len(ind_1)*0.6):round(len(ind_1)*0.8)] ,
     
-    train_id_list = np.random.permutation(np.append(train_id_list,train_id_1))
-    val_id_list = np.random.permutation(np.append(val_id_list, val_id_1))
+    train_id_list = np.append(train_id_list,train_id_1)
+    val_id_list =   np.append(val_id_list, val_id_1)
     #test_id_list = np.append(test_id_list, test_id_1)     
     
     return train_id_list, val_id_list  #test_id_list
@@ -687,7 +687,7 @@ if __name__ == "__main__":
 
     train_loader = torch.utils.data.DataLoader(training_dataset, batch_size=32, num_workers=4, shuffle=True)
     validate_loader = torch.utils.data.DataLoader(validation_dataset, batch_size=16, shuffle = False)
-    validate_loader_real = torch.utils.data.DataLoader(validation_dataset_real, batch_size=16, shuffle = False)
+    validate_loader_real = torch.utils.data.DataLoader(validation_dataset, batch_size=16, shuffle = False)
     test_loader = torch.utils.data.DataLoader(testing_dataset, batch_size=16, shuffle = False)
     print(len(training_dataset), len(validation_dataset))
     print(len(train_loader),len(validate_loader),len(test_loader))
