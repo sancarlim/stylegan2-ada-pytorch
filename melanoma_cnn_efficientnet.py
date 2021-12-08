@@ -686,7 +686,7 @@ if __name__ == "__main__":
                    
 
     train_loader = torch.utils.data.DataLoader(training_dataset, batch_size=32, num_workers=4, shuffle=True)
-    validate_loader = torch.utils.data.DataLoader(validation_dataset, batch_size=16, shuffle = False)
+    validate_loader = torch.utils.data.DataLoader(validation_dataset_real, batch_size=16, shuffle = False)
     validate_loader_real = torch.utils.data.DataLoader(validation_dataset, batch_size=16, shuffle = False)
     test_loader = torch.utils.data.DataLoader(testing_dataset, batch_size=16, shuffle = False)
     print(len(training_dataset), len(validation_dataset))
