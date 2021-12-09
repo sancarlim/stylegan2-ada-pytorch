@@ -658,7 +658,7 @@ if __name__ == "__main__":
     input_images = [str(f) for f in sorted(Path(args.syn_data_path).rglob('*')) if os.path.isfile(f)]
     y = [0 if f.split('.png')[0][-1] == '0' else 1 for f in input_images]
     
-    n_b, n_m = [int(i) for i in args.synt_n_imgs.split(' ') ]
+    n_b, n_m = [int(i) for i in args.synt_n_imgs.split(',') ]
     train_id_list, val_id_list = create_split(args.syn_data_path, n_b , n_m)
     # ind=np.append(ind_0, ind_1)
     train_img = [input_images[int(i)] for i in train_id_list]
