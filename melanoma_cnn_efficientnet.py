@@ -614,8 +614,8 @@ if __name__ == "__main__":
 
     train_df=pd.DataFrame(train_split)
     validation_df=pd.DataFrame(valid_split)
-    train_df['image_name'] = [os.path.join(args.real_data_path, df.iloc[index]['image_name'] + '.jpg') for index in range(len(train_df))]
-    validation_df['image_name'] = [os.path.join(args.real_data_path, df.iloc[index]['image_name'] + '.jpg') for index in range(len(validation_df))]
+    train_df['image_name'] = [os.path.join(train_img_dir, df.iloc[index]['image_name'] + '.jpg') for index in range(len(train_df))]
+    validation_df['image_name'] = [os.path.join(train_img_dir, df.iloc[index]['image_name'] + '.jpg') for index in range(len(validation_df))]
 
     # under_sampler = RandomUnderSampler(random_state=42)
     # train_df_res, _ = under_sampler.fit_resample(train_df, train_df.target)
@@ -656,7 +656,7 @@ if __name__ == "__main__":
     val_id = np.append(val_0, val_1)
     """
     input_images = [str(f) for f in sorted(Path(args.syn_data_path).rglob('*')) if os.path.isfile(f)]
-    y = [0 if f.split('.png')[0][-1] == '0' else 1 for f in input_images]
+    y = [0 if f.split('.jpg')[0][-1] == '0' else 1 for f in input_images]
     
     n_b, n_m = [int(i) for i in args.synt_n_imgs.split(',') ]
     train_id_list, val_id_list = create_split(args.syn_data_path, n_b , n_m)
