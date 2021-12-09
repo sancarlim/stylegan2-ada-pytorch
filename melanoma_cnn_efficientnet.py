@@ -185,26 +185,25 @@ def plot_diagnosis(model, predict_image_path):
     plt.savefig(f'./prediction_{img_nb}.png')
 
 
-def create_split(source_dir, unbalanced=False):       
+def create_split(source_dir, n_b, n_m):       
     input_images = [str(f) for f in sorted(Path(source_dir).rglob('*')) if os.path.isfile(f)]
     
     ind_0, ind_1 = [], []
     for i, f in enumerate(input_images):
-        if f.split('.jpg')[0][-1] == '0':
+        if f.split('.jpg')[0][-1] == '0' or f.split('.png')[0][-1] == '0':
             ind_0.append(i)
         else:
             ind_1.append(i) 
 
-    ind_0=np.random.permutation(ind_0)
-    ind_1=np.random.permutation(ind_1)
-    if unbalanced:
-        ind_1 = ind_1[:round(len(ind_1)*0.16)] #Train with 15% melanoma
-    
+    ind_0=np.random.permutation(ind_0)[:n_b*1000]
+    ind_1=np.random.permutation(ind_1)[:n_m*1000]
+
+    # ind_1 = ind_1[:round(len(ind_1)*0.16)] #Train with 15% melanoma
     
     train_id_list, val_id_list  = ind_0[:round(len(ind_0)*0.8)],  ind_0[round(len(ind_0)*0.8):]       #ind_0[round(len(ind_0)*0.6):round(len(ind_0)*0.8)] ,
     train_id_1, val_id_1 = ind_1[:round(len(ind_1)*0.8)],  ind_1[round(len(ind_1)*0.8):] #ind_1[round(len(ind_1)*0.6):round(len(ind_1)*0.8)] ,
     
-    train_id_list = np.append(train_id_list,train_id_1)
+    train_id_list = np.append(train_id_list, train_id_1)
     val_id_list =   np.append(val_id_list, val_id_1)
     #test_id_list = np.append(test_id_list, test_id_1)     
     
@@ -347,15 +346,14 @@ class Microscope:
 
 
 class CustomDataset(Dataset):
-    def __init__(self, df: pd.DataFrame, img_dir, train: bool = True, transforms= None):
+    def __init__(self, df: pd.DataFrame, train: bool = True, transforms= None):
         self.df = df
-        self.img_dir = img_dir
         self.transforms = transforms
         self.train = train
     def __len__(self):
         return len(self.df)
     def __getitem__(self, index):
-        img_path = os.path.join(self.img_dir, self.df.iloc[index]['image_name'] + '.jpg')
+        img_path = self.df.iloc[index]['image_name']
         #images = Image.open(img_path)
         images = cv2.imread(img_path)
 
@@ -489,7 +487,7 @@ def train(model, train_loader, validate_loader, validate_loader_reals, k_fold = 
         train_acc = correct / len(training_dataset)
         
         val_loss, val_auc_score, val_accuracy, val_f1 = val(model, validate_loader, criterion)
-        val_loss_r, val_auc_score_r, val_accuracy_r, val_f1_r = val(model, validate_loader_reals, criterion)
+        #val_loss_r, val_auc_score_r, val_accuracy_r, val_f1_r = val(model, validate_loader_reals, criterion)
         
         training_time = str(datetime.timedelta(seconds=time.time() - start_time))[:7]
             
@@ -525,8 +523,8 @@ def train(model, train_loader, validate_loader, validate_loader_reals, k_fold = 
         val_auc_history.append(val_auc_score)
         val_f1_history.append(val_f1)
 
-        val_loss_r_history.append(val_loss_r)  
-        val_auc_r_history.append(val_auc_score_r)
+        #val_loss_r_history.append(val_loss_r)  
+        #val_auc_r_history.append(val_auc_score_r)
 
     total_training_time = str(datetime.timedelta(seconds=time.time() - Total_start_time  ))[:7]                  
     print("Total Training Time: {}".format(total_training_time))
@@ -534,7 +532,7 @@ def train(model, train_loader, validate_loader, validate_loader_reals, k_fold = 
     del train_loader, validate_loader, images
     gc.collect()
 
-    return loss_history, train_acc_history, val_auc_history, val_loss_history, val_f1_history, model_path, val_loss_r_history, val_auc_r_history
+    return loss_history, train_acc_history, val_auc_history, val_loss_history, val_f1_history, model_path #, val_loss_r_history, val_auc_r_history
                 
 def val(model, validate_loader, criterion):          
     model.eval()
@@ -602,6 +600,7 @@ if __name__ == "__main__":
     parser.add_argument("--epochs", type=int, default='10')
     parser.add_argument("--kfold", type=int, default='3', help='number of folds for stratisfied kfold')
     parser.add_argument("--unbalanced", action='store_true', help='train with 15% melanoma')
+    parser.add_argument("--synt_n_imgs",  type=list, default=[0,15], help='[n benign, n melanoma]K synthetic images to add to the real data')
     args = parser.parse_args()
 
     # For training with ISIC dataset
@@ -615,6 +614,8 @@ if __name__ == "__main__":
 
     train_df=pd.DataFrame(train_split)
     validation_df=pd.DataFrame(valid_split)
+    train_df['image_name'] = [os.path.join(args.real_data_path, df.iloc[index]['image_name'] + '.jpg') for index in range(len(train_df))]
+    validation_df['image_name'] = [os.path.join(args.real_data_path, df.iloc[index]['image_name'] + '.jpg') for index in range(len(validation_df))]
 
     # under_sampler = RandomUnderSampler(random_state=42)
     # train_df_res, _ = under_sampler.fit_resample(train_df, train_df.target)
@@ -653,17 +654,18 @@ if __name__ == "__main__":
     train_1, val_1 = train_test_split(ind_1, test_size=0.25, random_state=3) # 0.25 x 0.8 = 0.2
     train_id = np.append(train_0,train_1)
     val_id = np.append(val_0, val_1)
-    
-    input_images = [str(f) for f in sorted(Path(args.data_path).rglob('*')) if os.path.isfile(f)]
-    y = [0 if f.split('.png')[0][-1] == '0' else 1 for f in input_images]
-    if args.unbalanced:
-        ind_0, ind_1 = create_split(args.data_path, unbalanced=args.unbalanced)
-        ind=np.append(ind_0, ind_1)
-        input_images = [input_images[i] for i in ind]
-        y = [y[i] for i in ind]
-    train_img, test_img, train_gt, test_gt = train_test_split(input_images, y, stratify=y, test_size=0.2, random_state=3)
     """
-   
+    input_images = [str(f) for f in sorted(Path(args.syn_data_path).rglob('*')) if os.path.isfile(f)]
+    y = [0 if f.split('.png')[0][-1] == '0' else 1 for f in input_images]
+    
+    train_id_list, val_id_list = create_split(args.syn_data_path, n_b=args.synt_n_imgs[0] , n_m=args.synt_n_imgs[1])
+    # ind=np.append(ind_0, ind_1)
+    train_img = [input_images[int(i)] for i in train_id_list]
+    train_gt = [y[int(i)] for i in train_id_list]
+    # train_img, test_img, train_gt, test_gt = train_test_split(input_images, y, stratify=y, test_size=0.2, random_state=3)
+    synt_train_df = pd.DataFrame({'image_name': train_img, 'target': train_gt})
+    train_df = pd.concat([train_df, synt_train_df]) 
+    
     fold=0
     #skf = StratifiedKFold(n_splits=args.kfold)
     #for fold, (train_ix, val_ix) in enumerate(skf.split(train_img, train_gt)): 
@@ -676,17 +678,17 @@ if __name__ == "__main__":
                        
                                    
     # training_dataset = Synth_Dataset(source_dir = args.syn_data_path, transform = training_transforms, id_list = None, unbalanced=args.unbalanced)  # CustomDataset(df = train_df_res, img_dir = train_img_dir,  train = True, transforms = training_transforms )
-    validation_dataset_real = CustomDataset(df = validation_df, img_dir = train_img_dir, train = True, transforms = training_transforms )
-    train_id, val_id = create_split(args.syn_data_path, unbalanced=args.unbalanced)
-    training_dataset = Synth_Dataset(source_dir = args.syn_data_path, transform = training_transforms, id_list = train_id, unbalanced=args.unbalanced)  # CustomDataset(df = train_df_res, img_dir = train_img_dir,  train = True, transforms = training_transforms )
-    validation_dataset = Synth_Dataset(source_dir = args.syn_data_path, transform = training_transforms, id_list = val_id) 
+    # train_id, val_id = create_split(args.syn_data_path, unbalanced=args.unbalanced)
+    training_dataset = CustomDataset(df = train_df, train = True, transforms = training_transforms )
+        #Synth_Dataset(source_dir = args.syn_data_path, transform = training_transforms, id_list = train_id, unbalanced=args.unbalanced)  # CustomDataset(df = train_df_res, img_dir = train_img_dir,  train = True, transforms = training_transforms )
+    validation_dataset =  CustomDataset(df = validation_df, train = True, transforms = training_transforms) 
 
     #testing_dataset = Synth_Dataset(source_dir = args.data_path, transform = testing_transforms, id_list = range(len(test_gt)), input_img=test_img)
-    testing_dataset = CustomDataset(df = validation_df, img_dir = train_img_dir,  train = True, transforms = testing_transforms ) 
+    testing_dataset = CustomDataset(df = validation_df, train = True, transforms = testing_transforms ) 
                    
 
     train_loader = torch.utils.data.DataLoader(training_dataset, batch_size=32, num_workers=4, shuffle=True)
-    validate_loader = torch.utils.data.DataLoader(validation_dataset_real, batch_size=16, shuffle = False)
+    validate_loader = torch.utils.data.DataLoader(validation_dataset, batch_size=16, shuffle = False)
     validate_loader_real = torch.utils.data.DataLoader(validation_dataset, batch_size=16, shuffle = False)
     test_loader = torch.utils.data.DataLoader(testing_dataset, batch_size=16, shuffle = False)
     print(len(training_dataset), len(validation_dataset))
