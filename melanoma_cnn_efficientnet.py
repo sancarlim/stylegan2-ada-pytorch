@@ -600,7 +600,7 @@ if __name__ == "__main__":
     parser.add_argument("--epochs", type=int, default='10')
     parser.add_argument("--kfold", type=int, default='3', help='number of folds for stratisfied kfold')
     parser.add_argument("--unbalanced", action='store_true', help='train with 15% melanoma')
-    parser.add_argument("--synt_n_imgs",  type=list, default=[0,15], help='[n benign, n melanoma]K synthetic images to add to the real data')
+    parser.add_argument("--synt_n_imgs",  type=str, default="0,15", help='n benign, n melanoma K synthetic images to add to the real data')
     args = parser.parse_args()
 
     # For training with ISIC dataset
@@ -658,7 +658,8 @@ if __name__ == "__main__":
     input_images = [str(f) for f in sorted(Path(args.syn_data_path).rglob('*')) if os.path.isfile(f)]
     y = [0 if f.split('.png')[0][-1] == '0' else 1 for f in input_images]
     
-    train_id_list, val_id_list = create_split(args.syn_data_path, n_b=args.synt_n_imgs[0] , n_m=args.synt_n_imgs[1])
+    n_b, n_m = [int(i) for i in args.synt_n_imgs.split(' ') ]
+    train_id_list, val_id_list = create_split(args.syn_data_path, n_b , n_m)
     # ind=np.append(ind_0, ind_1)
     train_img = [input_images[int(i)] for i in train_id_list]
     train_gt = [y[int(i)] for i in train_id_list]
