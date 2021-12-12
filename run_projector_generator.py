@@ -12,6 +12,8 @@ np.random.seed(0)
 parser = ArgumentParser()
 parser.add_argument("--filename", type=str, default='dataset.json')
 parser.add_argument("--directory", type=str, default='/workspace/melanoma_isic_dataset/stylegan2-ada-pytorch/processed_dataset_256')
+parser.add_argument('--initial_tqdm', type=int, help='Restart projection', default=0)
+
 parser.add_argument("--task", type=str, default='project', help='Choose task project/generate',
                             choices=['generate', 'project'])
 
@@ -29,8 +31,8 @@ directory = args.directory
 if args.task == 'project':
     with open(os.path.join(directory, filename)) as file:
         data = json.load(file)['labels']
-
-        for img in tqdm(data):
+        
+        for img in tqdm(data, initial=args.initial_tqdm):
             img_dir = os.path.join(directory,img[0])
             label = img[1]
 
