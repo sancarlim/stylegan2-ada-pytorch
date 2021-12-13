@@ -9,7 +9,7 @@ import torch
 
 
 # default `log_dir` is "runs" - we'll be more specific here
-writer = SummaryWriter('/home/stylegan2-ada-pytorch/projector')
+writer = SummaryWriter('/workspace/melanoma_isic_dataset/stylegan2-ada-pytorch/projector')
 
 directory = "/workspace/melanoma_isic_dataset/stylegan2-ada-pytorch/projector" 
 emb_f = "allvectors.txt"
@@ -39,7 +39,7 @@ for i, line in enumerate(metadata):
     img_name = line.split(' ')[1].split('txt')[0] + 'from.png'  # 0 img00000552.class.0.txt
     label = line.split(' ')[0]
     img_dir = os.path.join(directory,img_name)
-    img = torch.tensor(transform(Image.open(img_dir).resize((100, 100))), dtype=torch.float32)
+    img = transform(Image.open(img_dir).resize((100, 100))) 
     images_pil[i] = img
     labels.append(label)
 
