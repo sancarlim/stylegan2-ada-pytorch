@@ -195,8 +195,8 @@ def create_split(source_dir, n_b, n_m):
         else:
             ind_1.append(i) 
 
-    ind_0=np.random.permutation(ind_0)[:n_b*1000]
-    ind_1=np.random.permutation(ind_1)[:n_m*1000]
+    ind_0=np.random.permutation(ind_0[::2])[:n_b*1000]
+    ind_1=np.random.permutation(ind_1[1::2])[:n_m*1000]
 
     # ind_1 = ind_1[:round(len(ind_1)*0.16)] #Train with 15% melanoma
     
@@ -600,6 +600,7 @@ if __name__ == "__main__":
     parser.add_argument("--epochs", type=int, default='10')
     parser.add_argument("--kfold", type=int, default='3', help='number of folds for stratisfied kfold')
     parser.add_argument("--unbalanced", action='store_true', help='train with 15% melanoma')
+    parser.add_argument("--only_syn", action='store_true', help='train using only synthetic images')
     parser.add_argument("--synt_n_imgs",  type=str, default="0,15", help='n benign, n melanoma K synthetic images to add to the real data')
     args = parser.parse_args()
 
@@ -665,7 +666,10 @@ if __name__ == "__main__":
     train_gt = [y[int(i)] for i in train_id_list]
     # train_img, test_img, train_gt, test_gt = train_test_split(input_images, y, stratify=y, test_size=0.2, random_state=3)
     synt_train_df = pd.DataFrame({'image_name': train_img, 'target': train_gt})
-    train_df = pd.concat([train_df, synt_train_df]) 
+    if args.only_syn:
+        train_df = synt_train_df
+    else:
+        train_df = pd.concat([train_df, synt_train_df]) 
     
     fold=0
     #skf = StratifiedKFold(n_splits=args.kfold)
