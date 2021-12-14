@@ -11,14 +11,15 @@ import torch
 from torch import nn
 from torch import optim
 import torch.nn.functional as F
-from torchvision import datasets, transforms, models
+from torchvision import datasets, transforms, models, utils
 from torch.utils.data import Dataset
 from torch.optim.lr_scheduler import ReduceLROnPlateau
-
+from torch.utils.tensorboard import SummaryWriter
+import matplotlib.pyplot as plt
 
 import torchtoolbox.transform as transforms
 from torch.utils.data import Dataset, DataLoader, Subset
-from imblearn.under_sampling import RandomUnderSampler
+# from imblearn.under_sampling import RandomUnderSampler
 
 import time
 import datetime
@@ -34,7 +35,7 @@ import os
 import warnings
 warnings.simplefilter('ignore')
 
-
+classes = ('benign', 'melanoma')
 # Creating seeds to make results reproducible
 def seed_everything(seed_value):
     np.random.seed(seed_value)
@@ -54,6 +55,7 @@ seed_everything(seed)
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print (device)
 
+writer = SummaryWriter('training_classifiers/')
 
 def process_image(image_path):
     ''' Scales, crops, and normalizes a PIL image for a PyTorch model,
@@ -209,6 +211,64 @@ def create_split(source_dir, n_b, n_m):
     
     return train_id_list, val_id_list  #test_id_list
 
+# helper functions
+
+def images_to_probs(net, images):
+    '''
+    Generates predictions and corresponding probabilities from a trained
+    network and a list of images
+    '''
+    output = net(images)
+    # convert output probabilities to predicted class
+    _, preds_tensor = torch.max(output, 1)
+    preds = np.squeeze(preds_tensor.numpy())
+    return preds, [F.softmax(el, dim=0)[i].item() for i, el in zip(preds, output)]
+
+def matplotlib_imshow(img, one_channel=False):
+    if one_channel:
+        img = img.mean(dim=0)
+    img = img / 2 + 0.5     # unnormalize
+    npimg = img.numpy()
+    if one_channel:
+        plt.imshow(npimg, cmap="Greys")
+    else:
+        plt.imshow(np.transpose(npimg, (1, 2, 0)))
+
+def plot_classes_preds(net, images, labels):
+    '''
+    Generates matplotlib Figure using a trained network, along with images
+    and labels from a batch, that shows the network's top prediction along
+    with its probability, alongside the actual label, coloring this
+    information based on whether the prediction was correct or not.
+    Uses the "images_to_probs" function.
+    '''
+    preds, probs = images_to_probs(net, images)
+    # plot the images in the batch, along with predicted and true labels
+    fig = plt.figure(figsize=(12, 48))
+    for idx in np.arange(4):
+        ax = fig.add_subplot(1, 4, idx+1, xticks=[], yticks=[])
+        matplotlib_imshow(images[idx], one_channel=True)
+        ax.set_title("{0}, {1:.1f}%\n(label: {2})".format(
+            classes[preds[idx]],
+            probs[idx] * 100.0,
+            classes[labels[idx]]),
+                    color=("green" if preds[idx]==labels[idx].item() else "red"))
+    return fig
+
+
+def add_pr_curve_tensorboard(class_index, test_probs, test_label, global_step=0):
+    '''
+    Takes in a "class_index" from 0 to 9 and plots the corresponding
+    precision-recall curve
+    '''
+    tensorboard_truth = test_label == class_index
+    tensorboard_probs = test_probs[:, class_index]
+
+    writer.add_pr_curve(classes[class_index],
+                        tensorboard_truth,
+                        tensorboard_probs,
+                        global_step=global_step)
+    writer.close()
 
 class AdvancedHairAugmentation:
     """
@@ -500,7 +560,14 @@ def train(model, train_loader, validate_loader, validate_loader_reals, k_fold = 
             "Validation F1 Score: {:.3f}".format(val_f1),
             "Training Time: {}".format( training_time))
             
-        
+        writer.add_scalar('training loss', 
+                            running_loss/len(train_loader),
+                            e+1 )
+
+        writer.add_figure('predictions vs. actuals',
+                            plot_classes_preds(model, images, labels),
+                            global_step=e+1)
+
         scheduler.step(val_f1)
                 
         if val_f1 > best_val:
@@ -587,7 +654,11 @@ def test(model, test_loader):
         test_accuracy = accuracy_score(test_gt2.cpu(), torch.round(test_pred2))
         test_auc_score = roc_auc_score(test_gt, test_pred)
         test_f1_score = f1_score(test_gt, np.round(test_pred))
-        
+    
+    # plot all the pr curves
+    for i in range(len(classes)):
+        add_pr_curve_tensorboard(i, test_pred2, test_gt2)
+
     print("Test Accuracy: {:.5f}, ROC_AUC_score: {:.5f}, F1 score: {:.4f}".format(test_accuracy, test_auc_score, test_f1_score))  
 
     return test_pred, test_gt, test_accuracy
@@ -625,10 +696,10 @@ if __name__ == "__main__":
     training_transforms = transforms.Compose([#Microscope(),
                                             #AdvancedHairAugmentation(),
                                             transforms.RandomRotation(30),
-                                            transforms.RandomResizedCrop(256, scale=(0.8, 1.0)),
+                                            #transforms.RandomResizedCrop(256, scale=(0.8, 1.0)),
                                             transforms.RandomHorizontalFlip(),
                                             transforms.RandomVerticalFlip(),
-                                            transforms.ColorJitter(brightness=32. / 255.,saturation=0.5,hue=0.01),
+                                            #transforms.ColorJitter(brightness=32. / 255.,saturation=0.5,hue=0.01),
                                             transforms.ToTensor(),
                                             transforms.Normalize([0.485, 0.456, 0.406], 
                                                                 [0.229, 0.224, 0.225])])
@@ -699,9 +770,16 @@ if __name__ == "__main__":
     print(len(training_dataset), len(validation_dataset))
     print(len(train_loader),len(validate_loader),len(test_loader))
 
+    dataiter = iter(train_loader)
+    imgs, labels =dataiter.next()
+    img_grid = utils.make_grid(imgs)
+    writer.add_image('train_loader_images', img_grid)
+
     arch = EfficientNet.from_pretrained('efficientnet-b2')
     model = Net(arch=arch)  
     model = model.to(device)
+    
+    writer.add_graph(model, imgs)
 
     # If we need to freeze the pretrained model parameters to avoid backpropogating through them, turn to "False"
     for parameter in model.parameters():
