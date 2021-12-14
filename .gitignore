@@ -9,4 +9,7 @@ __pycache__/
 *pth 
 *npz
 *txt*
-*event*
+*even*
+*jpeg
+*json*
+*tsv
