@@ -4,13 +4,15 @@ import re
 import os
 from typing import List
 import matplotlib.pyplot as plt  
+from pathlib import Path
 from PIL import Image 
 import torch
-import torchtoolbox.transform as transforms
+#import torchtoolbox.transform as transforms
+from torchvision import transforms
 from efficientnet_pytorch import EfficientNet
 import seaborn as sb
 from argparse import ArgumentParser 
-from melanoma_cnn_efficientnet import Net, Synth_Dataset, test, CustomDataset , confusion_matrix
+from melanoma_cnn_efficientnet import Net, Synth_Dataset, test, CustomDataset , confussion_matrix
 import pandas as pd
 from sklearn.model_selection import train_test_split
 from datetime import date, datetime
@@ -134,30 +136,14 @@ def plot_diagnosis(predict_image_path, model):
     plot_1.set_title(f"Diagnosis: {classes}, Output (prob) {probs[0]:.4f}", fontdict=font);
     plt.savefig(f'/home/stylegan2-ada-pytorch/prediction_{img_nb}.png')
 
-def confussion_matrix(test, test_pred, test_accuracy):
-    pred = np.round(test_pred)
-    cm = confusion_matrix(test, pred)
 
-    cm_df = pd.DataFrame(cm,
-                        index = ['Benign','Malignant'], 
-                        columns = ['Benign','Malignant'])
-
-    plt.figure(figsize=(5.5,4))
-    sb.heatmap(cm_df, annot=True)
-    plt.title('Confusion Matrix \nAccuracy:{0:.3f}'.format(test_accuracy))
-    plt.ylabel('True label')
-    plt.xlabel('Predicted label')
-    plt.show()
-    
-    now=datetime.now()
-    plt.savefig(f'./conf_matrix_{test_accuracy:.4f}_{now.strftime("%d_%m_%H:%M")}.png')
 
 
 if __name__ == "__main__":
     parser = ArgumentParser()
     #parser.add_argument("--path", type=str, default='/home/Data/generated/seed9984_1.png', help="Path to image to predict")
     parser.add_argument('--seeds', type=num_range, help='List of random seeds Ex. 0-3 or 0,1,2')
-    parser.add_argument("--data_path", type=str, default='/home/Data/')
+    parser.add_argument("--data_path", type=str, default='/workspace/melanoma_isic_dataset')
     args = parser.parse_args()
 
     # Setting up GPU for processing or CPU if GPU isn't available
@@ -166,7 +152,7 @@ if __name__ == "__main__":
     # Load model
     arch = EfficientNet.from_pretrained('efficientnet-b2')
     model = Net(arch=arch)  
-    model.load_state_dict(torch.load('/home/stylegan2-ada-pytorch/trained_classifiers/melanoma_model_1_0.9992_generated-trunc-big.pth'))
+    model.load_state_dict(torch.load('/workspace/stylegan2-ada-pytorch/CNN_trainings/melanoma_model_0_0.9225_16_12_train_reals+15melanoma.pth'))
     model.eval()
     model.to(device)
 
@@ -178,14 +164,20 @@ if __name__ == "__main__":
                                                                 [0.229, 0.224, 0.225])])
     #testing_dataset = Synth_Dataset(source_dir = args.data_path, transform = testing_transforms, 
     #                                id_list = None, test=True, unbalanced=False)    
-
+    """
+    input_images = [str(f) for f in sorted(Path("/workspace/stylegan2-ada-pytorch/processed_dataset_256_melanomas_crop").rglob('*jpg')) if os.path.isfile(f)]
+    y = [1 for i in range(len(input_images))]
+    test_df = pd.DataFrame({'image_name': input_images, 'target': y})
+    """ 
     # For testing with ISIC dataset
-    df = pd.read_csv(os.path.join(args.data_path , 'melanoma_external_256/train_concat.csv')) 
-    train_img_dir = os.path.join(args.data_path ,'melanoma_external_256/train/train/')
+    df = pd.read_csv(os.path.join(args.data_path , 'train_concat.csv')) 
+    train_img_dir = os.path.join(args.data_path ,'train/train/')
     
     train_split, valid_split = train_test_split (df, stratify=df.target, test_size = 0.20, random_state=42) 
     validation_df=pd.DataFrame(valid_split)
-    testing_dataset = CustomDataset(df = validation_df, img_dir = train_img_dir,  train = True, transforms = testing_transforms ) 
+    validation_df['image_name'] = [os.path.join(train_img_dir, validation_df.iloc[index]['image_name'] + '.jpg') for index in range(len(validation_df))]
+    
+    testing_dataset = CustomDataset(df = validation_df, train = True, transforms = testing_transforms ) 
     test_loader = torch.utils.data.DataLoader(testing_dataset, batch_size=16, shuffle = False)                                                    
     test_pred, test_gt, test_accuracy = test(model, test_loader)  
     confussion_matrix(test_gt, test_pred, test_accuracy)

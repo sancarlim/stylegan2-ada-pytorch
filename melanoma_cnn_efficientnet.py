@@ -21,7 +21,7 @@ from torch.utils.data import Dataset, DataLoader, Subset
 # from imblearn.under_sampling import RandomUnderSampler
 
 import time
-import datetime
+from datetime import datetime
 import random
 
 from sklearn.model_selection import StratifiedKFold, GroupKFold, train_test_split
@@ -54,7 +54,7 @@ seed_everything(seed)
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print (device)
 
-writer = SummaryWriter('training_classifiers/')
+writer = SummaryWriter('training_classifiers_events/')
 
 def process_image(image_path):
     ''' Scales, crops, and normalizes a PIL image for a PyTorch model,
@@ -157,15 +157,17 @@ def confussion_matrix(test, test_pred, test_accuracy):
                         index = ['Benign','Malignant'], 
                         columns = ['Benign','Malignant'])
 
-    plt.figure(figsize=(5.5,4))
+    fig = plt.figure(figsize=(5.5,4))
     sb.heatmap(cm_df, annot=True)
     plt.title('Confusion Matrix \nAccuracy:{0:.3f}'.format(test_accuracy))
     plt.ylabel('True label')
     plt.xlabel('Predicted label')
     plt.show()
-    
-    bal_unbal = args.syn_data_path.split('/')[-1]
-    plt.savefig(f'./conf_matrix_{test_accuracy:.4f}_{bal_unbal}.png')
+
+    now=datetime.now()
+    plt.savefig(f'./conf_matrix_{test_accuracy:.4f}_{now.strftime("%d_%m_%H:%M")}.png')
+    writer.add_image('conf_matrix', fig)
+
 
 def plot_diagnosis(model, predict_image_path):
     img_nb = predict_image_path.split('/')[-1].split('.')[0]
@@ -268,9 +270,12 @@ def add_pr_curve_tensorboard(class_index, test_probs, test_label, global_step=0)
     precision-recall curve
     '''
     tensorboard_truth = test_label == class_index
-    tensorboard_probs = test_probs[:, class_index]
+    if class_index == 0:
+        tensorboard_probs = 1 - test_probs
+    else:
+        tensorboard_probs = test_probs
 
-    writer.add_pr_curve(classes[class_index],
+    writer.add_pr_curve(classes[class_index], 
                         tensorboard_truth,
                         tensorboard_probs,
                         global_step=global_step)
@@ -572,17 +577,15 @@ def train(model, train_loader, validate_loader, validate_loader_reals, k_fold = 
             "Validation F1 Score: {:.3f}".format(val_f1),
             "Training Time: {}".format( training_time))
             
-        writer.add_scalar('training loss', 
-                            running_loss/len(train_loader),
-                            e+1 )
+        writer.add_scalar('training loss',  running_loss/len(train_loader), e+1 )
+        writer.add_scalar('Training acc', train_acc, e+1 )
+        writer.add_scalar('Validation AUC Score', val_auc_score, e+1 )
         
 
-        
-
-        scheduler.step(val_f1)
+        scheduler.step(val_auc_score)
                 
-        if val_f1 > best_val:
-            best_val = val_f1
+        if val_auc_score > best_val:
+            best_val = val_auc_score
             patience = es_patience  # Resetting patience since we have new best validation accuracy
             bal_unbal = args.syn_data_path.split('/')[-1]
             model_path = f'./melanoma_model_{k_fold}_{best_val:.4f}_{bal_unbal}.pth'
@@ -662,9 +665,14 @@ def test(model, test_loader):
         test_pred2 = torch.tensor(test_pred)
         test_gt = np.concatenate(all_labels)
         test_gt2 = torch.tensor(test_gt)
-        test_accuracy = accuracy_score(test_gt2.cpu(), torch.round(test_pred2))
-        test_auc_score = roc_auc_score(test_gt, test_pred)
-        test_f1_score = f1_score(test_gt, np.round(test_pred))
+        try:
+            test_accuracy = accuracy_score(test_gt2.cpu(), torch.round(test_pred2))
+            test_auc_score = roc_auc_score(test_gt, test_pred)
+            test_f1_score = f1_score(test_gt, np.round(test_pred))
+        except:
+            test_auc_score = 0
+            test_f1_score = 0
+            pass
     
     # plot all the pr curves
     for i in range(len(classes)):
@@ -677,7 +685,7 @@ def test(model, test_loader):
 
 if __name__ == "__main__":
     parser = ArgumentParser()
-    parser.add_argument("--syn_data_path", type=str, default='/workspace/generated-balanced/')
+    parser.add_argument("--syn_data_path", type=str, default='/workspace/generated-aug-bg/')
     parser.add_argument("--real_data_path", type=str, default='/workspace/melanoma_isic_dataset')
     parser.add_argument("--epochs", type=int, default='15')
     parser.add_argument("--kfold", type=int, default='3', help='number of folds for stratisfied kfold')
@@ -693,12 +701,11 @@ if __name__ == "__main__":
     # test_img_dir = os.path.join(args.data_path , 'melanoma_external_256/test/test/')
     train_img_dir = os.path.join(args.real_data_path ,'train/train/')
     
-    train_split, valid_split = train_test_split (df, stratify=df.target, test_size = 0.20, random_state=42) 
+    df['image_name'] = [os.path.join(train_img_dir, df.iloc[index]['image_name'] + '.jpg') for index in range(len(df))]
 
-    train_df=pd.DataFrame(train_split)[:15000]
+    train_split, valid_split = train_test_split (df, stratify=df.target, test_size = 0.20, random_state=42) 
+    train_df=pd.DataFrame(train_split)
     validation_df=pd.DataFrame(valid_split)
-    train_df['image_name'] = [os.path.join(train_img_dir, train_df.iloc[index]['image_name'] + '.jpg') for index in range(len(train_df))]
-    validation_df['image_name'] = [os.path.join(train_img_dir, validation_df.iloc[index]['image_name'] + '.jpg') for index in range(len(validation_df))]
 
     # under_sampler = RandomUnderSampler(random_state=42)
     # train_df_res, _ = under_sampler.fit_resample(train_df, train_df.target)
@@ -741,7 +748,7 @@ if __name__ == "__main__":
     input_images = [str(f) for f in sorted(Path(args.syn_data_path).rglob('*')) if os.path.isfile(f)]
     y = [0 if f.split('.jpg')[0][-1] == '0' else 1 for f in input_images]
     
-    n_b, n_m = [int(i) for i in args.synt_n_imgs.split(',') ]
+    n_b, n_m = [int(i) for i in args.synt_n_imgs.split(',') ] if not args.only_syn else [1000,1000]
     train_id_list, val_id_list = create_split(args.syn_data_path, n_b , n_m)
     # ind=np.append(ind_0, ind_1)
     train_img = [input_images[int(i)] for i in train_id_list]
@@ -767,7 +774,7 @@ if __name__ == "__main__":
     # training_dataset = Synth_Dataset(source_dir = args.syn_data_path, transform = training_transforms, id_list = None, unbalanced=args.unbalanced)  # CustomDataset(df = train_df_res, img_dir = train_img_dir,  train = True, transforms = training_transforms )
     # train_id, val_id = create_split(args.syn_data_path, unbalanced=args.unbalanced)
     training_dataset = CustomDataset(df = train_df, train = True, transforms = training_transforms )
-        #Synth_Dataset(source_dir = args.syn_data_path, transform = training_transforms, id_list = train_id, unbalanced=args.unbalanced)  # CustomDataset(df = train_df_res, img_dir = train_img_dir,  train = True, transforms = training_transforms )
+                        #Synth_Dataset(source_dir = args.syn_data_path, transform = training_transforms, id_list = train_id, unbalanced=args.unbalanced)  # CustomDataset(df = train_df_res, img_dir = train_img_dir,  train = True, transforms = training_transforms )
     validation_dataset =  CustomDataset(df = validation_df, train = True, transforms = training_transforms) 
 
     #testing_dataset = Synth_Dataset(source_dir = args.data_path, transform = testing_transforms, id_list = range(len(test_gt)), input_img=test_img)
@@ -806,31 +813,6 @@ if __name__ == "__main__":
 
     loss_history, train_acc_history, val_auc_history, val_loss_history, val_f1_history, model_path = train(model, train_loader, validate_loader, validate_loader_real, fold, epochs=args.epochs, es_patience=3)
 
-    fig = plt.figure(figsize=(20, 5))
-    ax1 = fig.cadd_subplot(1,2,1)
-    ax2 = fig.add_subplot(1,2,2)
-
-    ax1.plot(loss_history, label= 'Training Loss')  
-    ax1.plot(val_loss_history,label='Validation Loss')
-    #ax1.plot(val_loss_r_history,label='Validation Reals Loss')
-    ax1.set_title("Losses")
-    ax1.set_xlabel('Epochs')
-    ax1.set_ylabel('Loss')
-    ax1.legend()
-
-    ax2.plot(train_acc_history,label='Training accuracy')  
-    #ax2.plot(val_acc_history,label='Validation accuracy')
-    ax2.plot(val_auc_history,label='Validation AUC Score')
-    ax2.plot(val_auc_r_history,label='Validation AUC Score')
-    ax2.plot(val_f1_history,label='Validation F1 Score')
-    ax2.set_title("Accuracies")
-    ax2.set_xlabel('Epochs')
-    ax2.set_ylabel('Accuracy')
-    ax2.legend()
-
-    plt.show()  
-    plt.savefig(f'./training_'+ str(fold) + args.syn_data_path.split('/')[-1] + '.png')
-
     del training_dataset, validation_dataset 
     gc.collect()
 
@@ -844,6 +826,4 @@ if __name__ == "__main__":
 
     ### CONFUSSION MATRIX ###
     confussion_matrix(test_gt, test_pred, test_accuracy)
-            
-    # Plot diagnosis 
-    #plot_diagnosis(model, os.path.join(args.data_path, 'seed9995_1.png'))
+    
