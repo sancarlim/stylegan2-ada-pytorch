@@ -17,7 +17,6 @@ from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torch.utils.tensorboard import SummaryWriter
 import matplotlib.pyplot as plt
 
-import torchtoolbox.transform as transforms
 from torch.utils.data import Dataset, DataLoader, Subset
 # from imblearn.under_sampling import RandomUnderSampler
 
@@ -221,14 +220,21 @@ def images_to_probs(net, images):
     output = net(images)
     # convert output probabilities to predicted class
     _, preds_tensor = torch.max(output, 1)
-    preds = np.squeeze(preds_tensor.numpy())
+    preds = np.squeeze(preds_tensor.cpu().numpy())
     return preds, [F.softmax(el, dim=0)[i].item() for i, el in zip(preds, output)]
+
+def renormalize(tensor):
+    minFrom= tensor.min()
+    maxFrom= tensor.max()
+    minTo = 0
+    maxTo=1
+    return minTo + (maxTo - minTo) * ((tensor - minFrom) / (maxFrom - minFrom))
 
 def matplotlib_imshow(img, one_channel=False):
     if one_channel:
         img = img.mean(dim=0)
-    img = img / 2 + 0.5     # unnormalize
-    npimg = img.numpy()
+    # img = img / 2 + 0.5     # unnormalize
+    npimg = renormalize(img).cpu().numpy()
     if one_channel:
         plt.imshow(npimg, cmap="Greys")
     else:
@@ -244,10 +250,10 @@ def plot_classes_preds(net, images, labels):
     '''
     preds, probs = images_to_probs(net, images)
     # plot the images in the batch, along with predicted and true labels
-    fig = plt.figure(figsize=(12, 48))
-    for idx in np.arange(4):
-        ax = fig.add_subplot(1, 4, idx+1, xticks=[], yticks=[])
-        matplotlib_imshow(images[idx], one_channel=True)
+    fig = plt.figure(figsize=(48, 48))
+    for idx in np.arange(32):
+        ax = fig.add_subplot(4, 8, idx+1, xticks=[], yticks=[])
+        matplotlib_imshow(images[idx], one_channel=False)
         ax.set_title("{0}, {1:.1f}%\n(label: {2})".format(
             classes[preds[idx]],
             probs[idx] * 100.0,
@@ -415,7 +421,7 @@ class CustomDataset(Dataset):
     def __getitem__(self, index):
         img_path = self.df.iloc[index]['image_name']
         #images = Image.open(img_path)
-        images = cv2.imread(img_path)
+        images =Image.open(img_path)
 
         if self.transforms:
             images = self.transforms(images)
@@ -525,7 +531,7 @@ def train(model, train_loader, validate_loader, validate_loader_reals, k_fold = 
         running_loss = 0
         model.train()
         
-        for images, labels in train_loader:
+        for i, (images, labels) in enumerate(train_loader):
             
             images, labels = images.to(device), labels.to(device)
                 
@@ -543,12 +549,18 @@ def train(model, train_loader, validate_loader, validate_loader_reals, k_fold = 
             train_preds = torch.round(torch.sigmoid(output))
                 
             correct += (train_preds.cpu() == labels.cpu().unsqueeze(1)).sum().item()
+            
+            if i % 500 == 1:  # == N every N minibatches 
+                writer.add_figure('predictions vs. actuals',
+                            plot_classes_preds(model, images, labels.type(torch.int)),
+                            global_step=e+1)
                             
         train_acc = correct / len(training_dataset)
-        
+
         val_loss, val_auc_score, val_accuracy, val_f1 = val(model, validate_loader, criterion)
         #val_loss_r, val_auc_score_r, val_accuracy_r, val_f1_r = val(model, validate_loader_reals, criterion)
         
+
         training_time = str(datetime.timedelta(seconds=time.time() - start_time))[:7]
             
         print("Epoch: {}/{}.. ".format(e+1, epochs),
@@ -563,10 +575,9 @@ def train(model, train_loader, validate_loader, validate_loader_reals, k_fold = 
         writer.add_scalar('training loss', 
                             running_loss/len(train_loader),
                             e+1 )
+        
 
-        writer.add_figure('predictions vs. actuals',
-                            plot_classes_preds(model, images, labels),
-                            global_step=e+1)
+        
 
         scheduler.step(val_f1)
                 
@@ -666,9 +677,9 @@ def test(model, test_loader):
 
 if __name__ == "__main__":
     parser = ArgumentParser()
-    parser.add_argument("--syn_data_path", type=str, default='/home/Data/generated')
-    parser.add_argument("--real_data_path", type=str, default='/home/Data/melanoma_external_256')
-    parser.add_argument("--epochs", type=int, default='10')
+    parser.add_argument("--syn_data_path", type=str, default='/workspace/generated-balanced/')
+    parser.add_argument("--real_data_path", type=str, default='/workspace/melanoma_isic_dataset')
+    parser.add_argument("--epochs", type=int, default='15')
     parser.add_argument("--kfold", type=int, default='3', help='number of folds for stratisfied kfold')
     parser.add_argument("--unbalanced", action='store_true', help='train with 15% melanoma')
     parser.add_argument("--only_syn", action='store_true', help='train using only synthetic images')
@@ -684,10 +695,10 @@ if __name__ == "__main__":
     
     train_split, valid_split = train_test_split (df, stratify=df.target, test_size = 0.20, random_state=42) 
 
-    train_df=pd.DataFrame(train_split)
+    train_df=pd.DataFrame(train_split)[:15000]
     validation_df=pd.DataFrame(valid_split)
-    train_df['image_name'] = [os.path.join(train_img_dir, df.iloc[index]['image_name'] + '.jpg') for index in range(len(train_df))]
-    validation_df['image_name'] = [os.path.join(train_img_dir, df.iloc[index]['image_name'] + '.jpg') for index in range(len(validation_df))]
+    train_df['image_name'] = [os.path.join(train_img_dir, train_df.iloc[index]['image_name'] + '.jpg') for index in range(len(train_df))]
+    validation_df['image_name'] = [os.path.join(train_img_dir, validation_df.iloc[index]['image_name'] + '.jpg') for index in range(len(validation_df))]
 
     # under_sampler = RandomUnderSampler(random_state=42)
     # train_df_res, _ = under_sampler.fit_resample(train_df, train_df.target)
@@ -772,14 +783,15 @@ if __name__ == "__main__":
 
     dataiter = iter(train_loader)
     imgs, labels =dataiter.next()
-    img_grid = utils.make_grid(imgs)
+    imgs_list = [renormalize(img) for img in imgs]
+    img_grid = utils.make_grid(imgs_list)
     writer.add_image('train_loader_images', img_grid)
 
     arch = EfficientNet.from_pretrained('efficientnet-b2')
     model = Net(arch=arch)  
     model = model.to(device)
     
-    writer.add_graph(model, imgs)
+    writer.add_graph(model, imgs.to(device))
 
     # If we need to freeze the pretrained model parameters to avoid backpropogating through them, turn to "False"
     for parameter in model.parameters():
@@ -792,15 +804,15 @@ if __name__ == "__main__":
         p.numel() for p in model.parameters() if p.requires_grad)
     print(f'{total_trainable_params:,} training parameters.')
 
-    loss_history, train_acc_history, val_auc_history, val_loss_history, val_f1_history, model_path, val_loss_r_history, val_auc_r_history = train(model, train_loader, validate_loader, validate_loader_real, fold, epochs=args.epochs, es_patience=3)
+    loss_history, train_acc_history, val_auc_history, val_loss_history, val_f1_history, model_path = train(model, train_loader, validate_loader, validate_loader_real, fold, epochs=args.epochs, es_patience=3)
 
     fig = plt.figure(figsize=(20, 5))
-    ax1 = fig.add_subplot(1,2,1)
+    ax1 = fig.cadd_subplot(1,2,1)
     ax2 = fig.add_subplot(1,2,2)
 
     ax1.plot(loss_history, label= 'Training Loss')  
     ax1.plot(val_loss_history,label='Validation Loss')
-    ax1.plot(val_loss_r_history,label='Validation Reals Loss')
+    #ax1.plot(val_loss_r_history,label='Validation Reals Loss')
     ax1.set_title("Losses")
     ax1.set_xlabel('Epochs')
     ax1.set_ylabel('Loss')
