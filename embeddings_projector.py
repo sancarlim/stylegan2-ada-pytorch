@@ -51,23 +51,4 @@ writer.add_embedding(embeddings_tensor,
                     label_img=images_pil,
                     global_step=0,
                     tag='reals_with_names')
-writer.close()
-
-"""
-# get some random training images
-dataiter = iter(trainloader)
-images, labels = dataiter.next()
-
-# create grid of images
-img_grid = torchvision.utils.make_grid(images)
-
-# show images
-matplotlib_imshow(img_grid, one_channel=True)
-
-# write to tensorboard
-writer.add_image('four_fashion_mnist_images', img_grid)
-
-writer.add_graph(net, images)
-writer.close()
-
-"""
+writer.close() 

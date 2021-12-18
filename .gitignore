@@ -13,3 +13,4 @@ __pycache__/
 *jpeg
 *json*
 *tsv
+.gitignore.swp

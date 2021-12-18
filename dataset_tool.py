@@ -54,7 +54,7 @@ def open_image_folder(source_dir, *, max_images: Optional[int]):
 
     # Load labels.
     labels = {}
-    meta_fname = os.path.join(source_dir, 'labels_without_val.json')
+    meta_fname = os.path.join(source_dir, 'labels.json')
     if os.path.isfile(meta_fname):
         with open(meta_fname, 'r') as file:
             labels = json.load(file)['labels']
@@ -69,7 +69,7 @@ def open_image_folder(source_dir, *, max_images: Optional[int]):
         for idx, fname in enumerate(labels.keys()):
             #arch_fname = os.path.relpath(fname, source_dir)
             arch_fname = fname #arch_fname.replace('\\', '/').replace('.jpg','')
-            img = np.array(PIL.Image.open(os.path.join(source_dir, fname + '.png')))
+            img = np.array(PIL.Image.open(arch_fname))
             yield dict(img=img, label=labels.get(arch_fname))
             if idx >= max_idx-1:
                 break
@@ -394,7 +394,7 @@ def convert_dataset(
     labels = []
     for idx, image in tqdm(enumerate(input_iter), total=num_files):
         idx_str = f'{idx:08d}'
-        archive_fname = f'{idx_str[:5]}/img{idx_str}.jpeg'
+        archive_fname = f'{idx_str[:5]}/img{idx_str}.jpg'
 
         # Apply crop and resize.
         img = transform_image(image['img'])

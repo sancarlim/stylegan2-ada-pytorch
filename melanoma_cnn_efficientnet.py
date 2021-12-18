@@ -21,7 +21,7 @@ from torch.utils.data import Dataset, DataLoader, Subset
 # from imblearn.under_sampling import RandomUnderSampler
 
 import time
-from datetime import datetime
+import datetime
 import random
 
 from sklearn.model_selection import StratifiedKFold, GroupKFold, train_test_split
@@ -54,7 +54,8 @@ seed_everything(seed)
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print (device)
 
-writer = SummaryWriter('training_classifiers_events/')
+writer_path=f'training_classifiers_events/test_all_melanoma/6_6k_pkl'   #{datetime.datetime.now()}/'
+writer = SummaryWriter(writer_path)
 
 def process_image(image_path):
     ''' Scales, crops, and normalizes a PIL image for a PyTorch model,
@@ -164,28 +165,9 @@ def confussion_matrix(test, test_pred, test_accuracy):
     plt.xlabel('Predicted label')
     plt.show()
 
-    now=datetime.now()
-    plt.savefig(f'./conf_matrix_{test_accuracy:.4f}_{now.strftime("%d_%m_%H:%M")}.png')
+    now=datetime.datetime.now()
+    plt.savefig(os.path.join(writer_path, f'./conf_matrix_{test_accuracy:.4f}_{now.strftime("%d_%m_%H:%M")}.png'))
     writer.add_image('conf_matrix', fig)
-
-
-def plot_diagnosis(model, predict_image_path):
-    img_nb = predict_image_path.split('/')[-1].split('.')[0]
-    probs, classes = predict(predict_image_path, model)   
-    print(probs)
-    print(classes)
-
-    # Display an image along with the diagnosis of melanoma or benign
-    # Plot Skin image input image
-    plt.figure(figsize = (6,10))
-    plot_1 = plt.subplot(2,1,1)
-
-    image = process_image(predict_image_path)
-
-    imshow(image, plot_1)
-    font = {"color": 'g'} if 'Benign' in classes else {"color": 'r'}
-    plot_1.set_title(f"Diagnosis: {classes}, Output (prob) {probs[0]:.4f}", fontdict=font);
-    plt.savefig(f'./prediction_{img_nb}.png')
 
 
 def create_split(source_dir, n_b, n_m):       
@@ -587,8 +569,7 @@ def train(model, train_loader, validate_loader, validate_loader_reals, k_fold = 
         if val_auc_score > best_val:
             best_val = val_auc_score
             patience = es_patience  # Resetting patience since we have new best validation accuracy
-            bal_unbal = args.syn_data_path.split('/')[-1]
-            model_path = f'./melanoma_model_{k_fold}_{best_val:.4f}_{bal_unbal}.pth'
+            model_path = os.path.join(writer_path, f'./melanoma_model_{k_fold}_{best_val:.4f}_{datetime.datetime.now()}.pth')
             torch.save(model.state_dict(), model_path)  # Saving current best model
             print(f'Saving model in {model_path}')
         else:
@@ -687,7 +668,7 @@ if __name__ == "__main__":
     parser = ArgumentParser()
     parser.add_argument("--syn_data_path", type=str, default='/workspace/generated-aug-bg/')
     parser.add_argument("--real_data_path", type=str, default='/workspace/melanoma_isic_dataset')
-    parser.add_argument("--epochs", type=int, default='15')
+    parser.add_argument("--epochs", type=int, default='20')
     parser.add_argument("--kfold", type=int, default='3', help='number of folds for stratisfied kfold')
     parser.add_argument("--unbalanced", action='store_true', help='train with 15% melanoma')
     parser.add_argument("--only_syn", action='store_true', help='train using only synthetic images')
