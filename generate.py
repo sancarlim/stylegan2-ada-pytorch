@@ -38,6 +38,7 @@ def num_range(s: str) -> List[int]:
 @click.pass_context
 @click.option('--network', 'network_pkl', help='Network pickle filename', required=True)
 @click.option('--seeds', type=num_range, help='List of random seeds')
+@click.option('--retrieve_embeddings', is_flag=True)
 @click.option('--num_imgs', type=int, help='Number of images to generate with random seeds if seeds=None')
 @click.option('--trunc', 'truncation_psi', type=float, help='Truncation psi', default=1, show_default=True)
 @click.option('--class', 'class_idx', type=int, help='Class label (unconditional if not specified)')
@@ -119,12 +120,13 @@ def generate_images(
     for seed_idx, seed in enumerate(seeds):
         print('Generating image for seed %d (%d/%d) ...' % (seed, seed_idx, len(seeds)))
         z = torch.from_numpy(np.random.RandomState(seed).randn(1, G.z_dim)).to(device)
-        ws = G.mapping(z, label, truncation_psi=1)
         img = G(z, label, truncation_psi=truncation_psi, noise_mode=noise_mode)
         img = (img.permute(0, 2, 3, 1) * 127.5 + 128).clamp(0, 255).to(torch.uint8)
-        PIL.Image.fromarray(img[0].cpu().numpy(), 'RGB').save(f'{outdir}/seed{seed:04d}_{class_idx}.png')
-        txtfilename = f'{outdir}/'+os.path.basename(f'seed{seed:04d}').split('.')[0]+'.class.' + str(class_idx) +'.txt'
-        np.savetxt(txtfilename, ws[0,0].cpu().numpy(), newline=" ") # save 1st element
+        PIL.Image.fromarray(img[0].cpu().numpy(), 'RGB').save(f'{outdir}/seed{seed:04d}_{class_idx}.jpg')
+        if retrieve_embeddings:
+            ws = G.mapping(z, label, truncation_psi=1)
+            txtfilename = f'{outdir}/'+os.path.basename(f'seed{seed:04d}').split('.')[0]+'.class.' + str(class_idx) +'.txt'
+            np.savetxt(txtfilename, ws[0,0].cpu().numpy(), newline=" ") # save 1st element
 
 #----------------------------------------------------------------------------
 
