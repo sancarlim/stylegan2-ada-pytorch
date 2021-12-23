@@ -166,7 +166,7 @@ def confussion_matrix(test, test_pred, test_accuracy):
     plt.show()
 
     now=datetime.datetime.now()
-    plt.savefig(os.path.join(writer_path, f'./conf_matrix_{test_accuracy:.4f}_{now.strftime("%d_%m_%H:%M")}.png'))
+    plt.savefig(os.path.join(writer_path, f'/conf_matrix_{test_accuracy:.4f}_{now.strftime("%d_%m_%H:%M")}.png'))
     writer.add_image('conf_matrix', fig)
 
 
@@ -462,9 +462,10 @@ class Synth_Dataset(Dataset):
 
 
 class Net(nn.Module):
-    def __init__(self, arch):
+    def __init__(self, arch, return_feats=False):
         super(Net, self).__init__()
         self.arch = arch
+        self.return_feats = return_feats
         if 'fgdf' in str(arch.__class__):
             self.arch.fc = nn.Linear(in_features=1280, out_features=500, bias=True)
         if 'EfficientNet' in str(arch.__class__):   
@@ -481,7 +482,8 @@ class Net(nn.Module):
         x = images
         features = self.arch(x)
         output = self.ouput(features)
-        
+        if self.return_feats:
+            return features
         return output
 
 
