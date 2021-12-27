@@ -11,6 +11,7 @@ from tqdm import tqdm
 from efficientnet_pytorch import EfficientNet
 from melanoma_cnn_efficientnet import Net
 from pathlib import Path
+import random
 # import tensorflow as tf
 
 def select_n_random(data, labels, n=100):
@@ -53,8 +54,9 @@ if args.use_cnn:
     for directory in directories:
         with open(os.path.join(directory, filename)) as file:
             data = json.load(file)['labels']
+            random.shuffle(data)
             with torch.no_grad():
-                for img, label in tqdm(data):
+                for i, (img, label) in tqdm(enumerate(data)):
                     img_dir = os.path.join(directory,img) 
                     img_net = torch.tensor(testing_transforms(Image.open(img_dir)).unsqueeze(0), dtype=torch.float32).to(device)
                     emb = model(img_net)
@@ -64,6 +66,10 @@ if args.use_cnn:
                     if args.sprite:
                         img_pil = transform(Image.open(img_dir).resize((100, 100)))
                         images_pil.append(img_pil)
+                    
+                    if i > 6000:
+                        # ISIC 37k images, project only 6k random imgs
+                        break
 
     # Repeat the process for randomly generated data
     images = [str(f) for f in sorted(Path("/workspace/stylegan2-ada-pytorch/projector/generated-20kpkl7").rglob('*jpg')) if os.path.isfile(f)]
@@ -73,7 +79,7 @@ if args.use_cnn:
             img_net = torch.tensor(testing_transforms(Image.open(img_dir)).unsqueeze(0), dtype=torch.float32).to(device)
             emb = model(img_net)
             embeddings.append(emb.cpu())                
-            metadata_f.append([label, img]) 
+            metadata_f.append([label, img_dir.split('/')[-1]]) 
             if args.sprite:
                 img_pil = transform(Image.open(img_dir).resize((100, 100)))
                 images_pil.append(img_pil)
@@ -82,7 +88,7 @@ if args.use_cnn:
     if args.sprite:
         images_pil = torch.stack(images_pil)
     # default `log_dir` is "runs" - we'll be more specific here
-    writer = SummaryWriter('/workspace/stylegan2-ada-pytorch/CNN_embeddings_projector/sam_synt_isic') 
+    writer = SummaryWriter('/workspace/stylegan2-ada-pytorch/CNN_embeddings_projector/all_net_trained_onlysyn') 
         
 else:
     # This part can be used with G_mapping embeddings (vector w) - projections in the latent space
