@@ -52,14 +52,12 @@ def project(
     z_samples = np.random.RandomState(123).randn(w_avg_samples, G.z_dim)
     # no conditional - w_samples = G.mapping(torch.from_numpy(z_samples).to(device), None)  # [N, L, C]
 
-    # para los conditional!
+    # Conditional
     # https: // github.com / NVlabs / stylegan2 - ada - pytorch / issues / 148
     label = int(class_label)
     onehot = torch.tensor(np.zeros([1, 2], dtype=np.int64))
-    onehot[0][label] = 1
-    #print(onehot)
-    label = onehot.cuda()
-    #label = torch.tensor([[0, 0, 0, 0, 0, 0, 1]]).cuda()
+    onehot[0][label] = 1 
+    label = onehot.cuda() 
     w_samples = G.mapping(torch.from_numpy(z_samples).to(device), torch.cat([label] * w_avg_samples, dim=0))
 
     w_samples = w_samples[:, :1, :].cpu().numpy().astype(np.float32)       # [N, 1, C]
