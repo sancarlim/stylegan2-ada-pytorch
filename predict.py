@@ -17,6 +17,13 @@ import pandas as pd
 from sklearn.model_selection import train_test_split
 from datetime import date, datetime
 
+
+testing_transforms = transforms.Compose([transforms.Resize(256),
+                                        transforms.CenterCrop(256),
+                                        transforms.ToTensor(),
+                                        transforms.Normalize([0.485, 0.456, 0.406], 
+                                                            [0.229, 0.224, 0.225])])
+                                                            
 def num_range(s: str) -> List[int]:
     '''Accept either a comma separated list of numbers 'a,b,c' or a range 'a-c' and return as a list of ints.'''
 
@@ -87,17 +94,17 @@ def imshow(image, ax=None, title=None):
 def predict(image_path, model, topk=1): #just 2 classes from 1 single output
     ''' Predict the class (or classes) of an image using a trained deep learning model.
     '''  
-    image = process_image(image_path)
+    #image = process_image(image_path)
     
     # Convert image to PyTorch tensor first
-    image = torch.from_numpy(image).type(torch.cuda.FloatTensor)
+    #image = torch.from_numpy(image).type(torch.cuda.FloatTensor)
     #print(image.shape)
     #print(type(image))
     
     # Returns a new tensor with a dimension of size one inserted at the specified position.
-    image = image.unsqueeze(0)
+    #image = image.unsqueeze(0)
     
-    output = model(image)
+    output = model(testing_transforms(Image.open(image_path)).type(torch.cuda.FloatTensor).unsqueeze(0))  # same output
     
     probabilities = torch.sigmoid(output)
     
@@ -118,8 +125,8 @@ def predict(image_path, model, topk=1): #just 2 classes from 1 single output
     
     return top_probabilities, top_classes
 
-def plot_diagnosis(predict_image_path, model):
-    img_nb = predict_image_path.split('/')[4].split('.')[0]
+def plot_diagnosis(predict_image_path, model,label):
+    img_nb = predict_image_path.split('/')[-1].split('.')[0]
     probs, classes = predict(predict_image_path, model)   
     print(probs)
     print(classes)
@@ -132,9 +139,9 @@ def plot_diagnosis(predict_image_path, model):
     image = process_image(predict_image_path)
 
     imshow(image, plot_1)
-    font = {"color": 'g'} if 'Benign' in classes else {"color": 'r'}
-    plot_1.set_title(f"Diagnosis: {classes}, Output (prob) {probs[0]:.4f}", fontdict=font);
-    plt.savefig(f'/home/stylegan2-ada-pytorch/prediction_{img_nb}.png')
+    font = {"color": 'g'} if 'Benign' in classes and label == 0 or 'Melanoma' in classes and label == 1 else {"color": 'r'}
+    plot_1.set_title(f"Diagnosis: {classes}, Output (prob) {probs[0]:.4f}, Label: {label}", fontdict=font);
+    plt.savefig(f'/workspace/stylegan2-ada-pytorch/predictions/prediction_{img_nb}.png')
 
 
 
@@ -157,15 +164,10 @@ if __name__ == "__main__":
     model.to(device)
 
     # TEST
-    testing_transforms = transforms.Compose([transforms.Resize(256),
-                                            transforms.CenterCrop(256),
-                                            transforms.ToTensor(),
-                                            transforms.Normalize([0.485, 0.456, 0.406], 
-                                                                [0.229, 0.224, 0.225])])
     #testing_dataset = Synth_Dataset(source_dir = args.data_path, transform = testing_transforms, 
     #                                id_list = None, test=True, unbalanced=False)    
-    """
-    input_images = [str(f) for f in sorted(Path("/workspace/stylegan2-ada-pytorch/processed_dataset_256_melanomas_crop").rglob('*jpg')) if os.path.isfile(f)]
+    
+    input_images = [str(f) for f in sorted(Path("/workspace/stylegan2-ada-pytorch/processed_dataset_512_SAM").rglob('*jpg')) if os.path.isfile(f)]
     y = [1 for i in range(len(input_images))]
     test_df = pd.DataFrame({'image_name': input_images, 'target': y})
     """ 
@@ -176,8 +178,8 @@ if __name__ == "__main__":
     train_split, valid_split = train_test_split (df, stratify=df.target, test_size = 0.20, random_state=42) 
     validation_df=pd.DataFrame(valid_split)
     validation_df['image_name'] = [os.path.join(train_img_dir, validation_df.iloc[index]['image_name'] + '.jpg') for index in range(len(validation_df))]
-    
-    testing_dataset = CustomDataset(df = validation_df, train = True, transforms = testing_transforms ) 
+    """
+    testing_dataset = CustomDataset(df = test_df, train = True, transforms = testing_transforms ) 
     test_loader = torch.utils.data.DataLoader(testing_dataset, batch_size=16, shuffle = False)                                                    
     test_pred, test_gt, test_accuracy = test(model, test_loader)  
     confussion_matrix(test_gt, test_pred, test_accuracy)
