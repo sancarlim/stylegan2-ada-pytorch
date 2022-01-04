@@ -28,6 +28,7 @@ from sklearn.model_selection import StratifiedKFold, GroupKFold, train_test_spli
 from sklearn.metrics import accuracy_score, roc_auc_score, confusion_matrix, f1_score
 
 from efficientnet_pytorch import EfficientNet
+from torchvision.models import resnet50
 
 import os 
 
@@ -54,7 +55,7 @@ seed_everything(seed)
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print (device)
 
-writer_path=f'training_classifiers_events/test_all_melanoma/6_6k_pkl'   #{datetime.datetime.now()}/'
+writer_path=f'training_classifiers_events/test_all_melanoma/{datetime.datetime.now().month}_{datetime.datetime.now().day}/'
 writer = SummaryWriter(writer_path)
 
 def process_image(image_path):
@@ -166,8 +167,8 @@ def confussion_matrix(test, test_pred, test_accuracy):
     plt.show()
 
     now=datetime.datetime.now()
-    plt.savefig(os.path.join(writer_path, f'/conf_matrix_{test_accuracy:.4f}_{now.strftime("%d_%m_%H:%M")}.png'))
-    writer.add_image('conf_matrix', fig)
+    # writer.add_image('conf_matrix', fig)
+    plt.savefig(os.path.join(writer_path, f'conf_matrix_{test_accuracy:.4f}_{now.strftime("%d_%m_%H_%M")}.png'))
 
 
 def create_split(source_dir, n_b, n_m):       
@@ -175,13 +176,13 @@ def create_split(source_dir, n_b, n_m):
     
     ind_0, ind_1 = [], []
     for i, f in enumerate(input_images):
-        if f.split('.jpg')[0][-1] == '0' or f.split('.png')[0][-1] == '0':
+        if f.split('.')[0][-1] == '0':
             ind_0.append(i)
         else:
             ind_1.append(i) 
 
-    ind_0=np.random.permutation(ind_0[::2])[:n_b*1000]
-    ind_1=np.random.permutation(ind_1[1::2])[:n_m*1000]
+    ind_0=np.random.permutation(ind_0)[:n_b*1000]
+    ind_1=np.random.permutation(ind_1)[:n_m*1000]
 
     # ind_1 = ind_1[:round(len(ind_1)*0.16)] #Train with 15% melanoma
     
@@ -407,7 +408,8 @@ class CustomDataset(Dataset):
         return len(self.df)
     def __getitem__(self, index):
         img_path = self.df.iloc[index]['image_name']
-        #images = Image.open(img_path)
+        rgb_img = cv2.imread(img_path, 1)[:, :, ::-1]
+        rgb_img = np.float32(rgb_img) / 255
         images =Image.open(img_path)
 
         if self.transforms:
@@ -420,7 +422,7 @@ class CustomDataset(Dataset):
         
         else:
             #return (images)
-            return torch.tensor(images, dtype=torch.float32)
+            return rgb_img, torch.tensor(images, dtype=torch.float32), torch.tensor(labels, dtype=torch.float32)
     
 
 class Synth_Dataset(Dataset):
@@ -471,6 +473,8 @@ class Net(nn.Module):
         if 'EfficientNet' in str(arch.__class__):   
             self.arch._fc = nn.Linear(in_features=1408, out_features=500, bias=True)
             #self.dropout1 = nn.Dropout(0.2)
+        if 'resnet' in str(arch.__class__):   
+            self.arch.fc = nn.Linear(in_features=2048, out_features=500, bias=True)
             
         self.ouput = nn.Linear(500, 1)
         
@@ -668,9 +672,10 @@ def test(model, test_loader):
 
 if __name__ == "__main__":
     parser = ArgumentParser()
-    parser.add_argument("--syn_data_path", type=str, default='/workspace/generated-aug-bg/')
+    parser.add_argument("--syn_data_path", type=str, default='/workspace/generated-no-valset')
     parser.add_argument("--real_data_path", type=str, default='/workspace/melanoma_isic_dataset')
-    parser.add_argument("--epochs", type=int, default='20')
+    parser.add_argument("--model", type=str, default='efficientnet')
+    parser.add_argument("--epochs", type=int, default='30')
     parser.add_argument("--kfold", type=int, default='3', help='number of folds for stratisfied kfold')
     parser.add_argument("--unbalanced", action='store_true', help='train with 15% melanoma')
     parser.add_argument("--only_syn", action='store_true', help='train using only synthetic images')
@@ -777,9 +782,8 @@ if __name__ == "__main__":
     img_grid = utils.make_grid(imgs_list)
     writer.add_image('train_loader_images', img_grid)
 
-    arch = EfficientNet.from_pretrained('efficientnet-b2')
-    model = Net(arch=arch)  
-    model = model.to(device)
+    arch = EfficientNet.from_pretrained('efficientnet-b2') if args.model=='efficientnet' else resnet50(pretrained=True)
+    model = Net(arch=arch).to(device)
     
     writer.add_graph(model, imgs.to(device))
 

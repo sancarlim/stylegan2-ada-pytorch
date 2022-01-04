@@ -5,10 +5,12 @@ from argparse import ArgumentParser
 from PIL import Image
 from efficientnet_pytorch import EfficientNet
 from torchvision.models import resnet50
-from melanoma_cnn_efficientnet import Net 
+from melanoma_cnn_efficientnet import Net , CustomDataset
 import json
 import random
+import cv2
 import numpy as np
+import pandas as pd
 
 from captum.attr import GuidedGradCam, IntegratedGradients, GradientShap, Occlusion, NoiseTunnel
 from captum.attr import visualization as viz
@@ -16,7 +18,8 @@ import matplotlib.pyplot as plt
 from matplotlib.colors import LinearSegmentedColormap
 from predict import plot_diagnosis
 
-from pytorch_grad_cam import GradCAM, ScoreCAM, GradCAMPlusPlus, AblationCAM, XGradCAM, EigenCAM
+from pytorch_grad_cam import GradCAM, ScoreCAM, GradCAMPlusPlus, AblationCAM, XGradCAM, EigenCAM, FullGrad, LayerCAM
+from pytorch_grad_cam.utils.model_targets import ClassifierOutputTarget
 from pytorch_grad_cam.utils.image import show_cam_on_image
 # from fastai2.vision.all import *
 
@@ -37,11 +40,18 @@ testing_transforms = transforms.Compose([transforms.Resize(256),
 directories = ["/workspace/stylegan2-ada-pytorch/processed_dataset_256"]
 filename = "dataset.json"
 
+input_images = [str(f) for f in sorted(directories[0].rglob('*')) if os.path.isfile(f)]
+y = [1 for n in range(len(input_images))] #[0 if f.split('.jpg')[0][-1] == '0' else 1 for f in input_images]
+data_df = pd.DataFrame({'image_name': input_images, 'target': y})
+dataset = CustomDataset(df = data_df, train = False, transforms = testing_transforms )
+dataloader = torch.utils.data.DataLoader(dataset, batch_size=32, num_workers=4, shuffle=True)
+                 
 
-arch = resnet50(pretrained=True) #EfficientNet.from_pretrained('efficientnet-b2')
+# arch = resnet50(pretrained=True) 
+arch = EfficientNet.from_pretrained('efficientnet-b2')
 model = Net(arch=arch)  
 # summary(model, (3, 256, 256), device='cpu')
-model.load_state_dict(torch.load('/workspace/stylegan2-ada-pytorch/training_classifiers_events/12_29/melanoma_model_0_0.9818_2021-12-29.pth'))
+model.load_state_dict(torch.load('/workspace/stylegan2-ada-pytorch/CNN_trainings/melanoma_model_0_0.9225_16_12_train_reals+15melanoma.pth')) #training_classifiers_events/12_29/melanoma_model_0_0.9818_2021-12-29-resnet.pth
 model.eval().to(device)
 
 guided_gc = GuidedGradCam(model, model.arch.layer4[2].conv3) #model.arch._conv_head )
@@ -49,6 +59,14 @@ integrated_gradients = IntegratedGradients(model)
 occlusion = Occlusion(model)
 gradient_shap = GradientShap(model)
 
+# grad-cam library
+target_layers = [model.arch._conv_head] #[model.arch.layer4[-1]]
+# Construct the CAM object once, and then re-use it on many images:
+cam = GradCAM(model=model, target_layers=target_layers, use_cuda=True)
+rgb_img = cv2.imread(img_dir, 1)[:, :, ::-1]
+rgb_img = np.float32(rgb_img) / 255
+
+                            
 for directory in directories:
     with open(os.path.join(directory, filename)) as file:
         data = json.load(file)['labels']
@@ -58,6 +76,13 @@ for directory in directories:
             plot_diagnosis(img_dir, model, label)
             image = torch.tensor(testing_transforms(Image.open(img_dir)).unsqueeze(0), 
                                     dtype=torch.float32, requires_grad=True).to(device)
+            
+            # The input tensor can be a batch tensor with several images.    
+            grayscale_cam = cam(image, aug_smooth=True, eigen_smooth=True)
+            visualization = show_cam_on_image(rgb_img, grayscale_cam[0,:], use_rgb=True)
+            cv2.imwrite(f'grad_cam.jpg', visualization)
+
+            
             attr_guidedGC = guided_gc.attribute(image)
             attr_ig = integrated_gradients.attribute(image)
 
