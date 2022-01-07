@@ -36,6 +36,32 @@ import warnings
 warnings.simplefilter('ignore')
 
 classes = ('benign', 'melanoma')
+
+# Defining transforms for the training, validation, and testing sets
+training_transforms = transforms.Compose([#Microscope(),
+                                        #AdvancedHairAugmentation(),
+                                        transforms.RandomRotation(30),
+                                        #transforms.RandomResizedCrop(256, scale=(0.8, 1.0)),
+                                        transforms.RandomHorizontalFlip(),
+                                        transforms.RandomVerticalFlip(),
+                                        #transforms.ColorJitter(brightness=32. / 255.,saturation=0.5,hue=0.01),
+                                        transforms.ToTensor(),
+                                        transforms.Normalize([0.485, 0.456, 0.406], 
+                                                            [0.229, 0.224, 0.225])])
+
+validation_transforms = transforms.Compose([transforms.Resize(256),
+                                            transforms.CenterCrop(256),
+                                            transforms.ToTensor(),
+                                            transforms.Normalize([0.485, 0.456, 0.406], 
+                                                                [0.229, 0.224, 0.225])])
+
+testing_transforms = transforms.Compose([transforms.Resize(256),
+                                        transforms.CenterCrop(256),
+                                        transforms.ToTensor(),
+                                        transforms.Normalize([0.485, 0.456, 0.406], 
+                                                            [0.229, 0.224, 0.225])])
+
+
 # Creating seeds to make results reproducible
 def seed_everything(seed_value):
     np.random.seed(seed_value)
@@ -414,15 +440,16 @@ class CustomDataset(Dataset):
 
         if self.transforms:
             images = self.transforms(images)
+            
+        labels = self.df.iloc[index]['target']
 
         if self.train:
-            labels = self.df.iloc[index]['target']
             #return images, labels
             return torch.tensor(images, dtype=torch.float32), torch.tensor(labels, dtype=torch.float32)
         
         else:
             #return (images)
-            return rgb_img, torch.tensor(images, dtype=torch.float32), torch.tensor(labels, dtype=torch.float32)
+            return img_path, torch.tensor(images, dtype=torch.float32), torch.tensor(labels, dtype=torch.float32)
     
 
 class Synth_Dataset(Dataset):
@@ -682,46 +709,9 @@ if __name__ == "__main__":
     parser.add_argument("--synt_n_imgs",  type=str, default="0,15", help='n benign, n melanoma K synthetic images to add to the real data')
     args = parser.parse_args()
 
-    # For training with ISIC dataset
-
-    df = pd.read_csv(os.path.join(args.real_data_path , 'train_concat.csv'))
-    # test_df = pd.read_csv(os.path.join(args.data_path ,'melanoma_external_256/test.csv'))
-    # test_img_dir = os.path.join(args.data_path , 'melanoma_external_256/test/test/')
-    train_img_dir = os.path.join(args.real_data_path ,'train/train/')
-    
-    df['image_name'] = [os.path.join(train_img_dir, df.iloc[index]['image_name'] + '.jpg') for index in range(len(df))]
-
-    train_split, valid_split = train_test_split (df, stratify=df.target, test_size = 0.20, random_state=42) 
-    train_df=pd.DataFrame(train_split)
-    validation_df=pd.DataFrame(valid_split)
 
     # under_sampler = RandomUnderSampler(random_state=42)
     # train_df_res, _ = under_sampler.fit_resample(train_df, train_df.target)
-    
-    # Defining transforms for the training, validation, and testing sets
-    training_transforms = transforms.Compose([#Microscope(),
-                                            #AdvancedHairAugmentation(),
-                                            transforms.RandomRotation(30),
-                                            #transforms.RandomResizedCrop(256, scale=(0.8, 1.0)),
-                                            transforms.RandomHorizontalFlip(),
-                                            transforms.RandomVerticalFlip(),
-                                            #transforms.ColorJitter(brightness=32. / 255.,saturation=0.5,hue=0.01),
-                                            transforms.ToTensor(),
-                                            transforms.Normalize([0.485, 0.456, 0.406], 
-                                                                [0.229, 0.224, 0.225])])
-
-    validation_transforms = transforms.Compose([transforms.Resize(256),
-                                                transforms.CenterCrop(256),
-                                                transforms.ToTensor(),
-                                                transforms.Normalize([0.485, 0.456, 0.406], 
-                                                                    [0.229, 0.224, 0.225])])
-
-    testing_transforms = transforms.Compose([transforms.Resize(256),
-                                            transforms.CenterCrop(256),
-                                            transforms.ToTensor(),
-                                            transforms.Normalize([0.485, 0.456, 0.406], 
-                                                                [0.229, 0.224, 0.225])])
-    
     
     """
     train_0, test_0 = train_test_split(ind_0, test_size=0.2, random_state=3)
@@ -746,9 +736,21 @@ if __name__ == "__main__":
     if args.only_syn:
         train_df = synt_train_df
     else:
+        # ISIC dataset
+        
+        df = pd.read_csv(os.path.join(args.real_data_path , 'train_concat.csv'))
+        # test_df = pd.read_csv(os.path.join(args.data_path ,'melanoma_external_256/test.csv'))
+        # test_img_dir = os.path.join(args.data_path , 'melanoma_external_256/test/test/')
+        train_img_dir = os.path.join(args.real_data_path ,'train/train/')
+        
+        df['image_name'] = [os.path.join(train_img_dir, df.iloc[index]['image_name'] + '.jpg') for index in range(len(df))]
+
+        train_split, valid_split = train_test_split (df, stratify=df.target, test_size = 0.20, random_state=42) 
+        train_df=pd.DataFrame(train_split)
+        validation_df=pd.DataFrame(valid_split)
         train_df = pd.concat([train_df, synt_train_df]) 
     
-    fold=0
+    #fold=0
     #skf = StratifiedKFold(n_splits=args.kfold)
     #for fold, (train_ix, val_ix) in enumerate(skf.split(train_img, train_gt)): 
     #    print(len(train_ix), len(val_ix))                                      
