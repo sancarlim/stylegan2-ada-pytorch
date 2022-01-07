@@ -20,9 +20,7 @@ from predict import plot_diagnosis
 
 from pytorch_grad_cam import GradCAM, ScoreCAM, GradCAMPlusPlus, AblationCAM, XGradCAM, EigenCAM, FullGrad, LayerCAM
 from pytorch_grad_cam.utils.model_targets import ClassifierOutputTarget
-from pytorch_grad_cam.utils.image import show_cam_on_image
-# from fastai2.vision.all import *
-
+from pytorch_grad_cam.utils.image import show_cam_on_image 
 
 torch.manual_seed(0)
 np.random.seed(0)
@@ -111,9 +109,9 @@ for directory in directories:
             grayscale_cam_ef = cam_ef(image, aug_smooth=True, eigen_smooth=True)
             grayscale_cam_r = cam_r(image, aug_smooth=True, eigen_smooth=True)
             visualization = show_cam_on_image(rgb_img, grayscale_cam_ef[0,:], use_rgb=True)
-            cv2.imwrite(f'/workspace/stylegan2-ada-pytorch/grad_cam_ef'+ img_dir.split('/')[-1].split('.')[0] + '.jpg', visualization)
+            cv2.imwrite(f'/workspace/stylegan2-ada-pytorch/explainability_examples/grad_cam_ef'+ img_dir.split('/')[-1].split('.')[0] + '.jpg', visualization)
             visualization = show_cam_on_image(rgb_img, grayscale_cam_r[0,:], use_rgb=True)
-            cv2.imwrite(f'/workspace/stylegan2-ada-pytorch/grad_cam_r'+ img_dir.split('/')[-1].split('.')[0] + '.jpg', visualization)
+            cv2.imwrite(f'/workspace/stylegan2-ada-pytorch/explainability_examples/grad_cam_r'+ img_dir.split('/')[-1].split('.')[0] + '.jpg', visualization)
 
 
             # Occlusion based attribution
@@ -131,7 +129,7 @@ for directory in directories:
                                         outlier_perc=2,
                                         )
 
-            plt.savefig('/workspace/stylegan2-ada-pytorch/occlusion_' + img_dir.split('/')[-1].split('.')[0] + '.png')
+            plt.savefig('/workspace/stylegan2-ada-pytorch/explainability_examples/occlusion_' + img_dir.split('/')[-1].split('.')[0] + '.png')
             
             # Defining baseline distribution of images
             rand_img_dist = torch.cat([image * 0, image * 1])
@@ -147,7 +145,7 @@ for directory in directories:
                                                 ["all", "absolute_value"],
                                                 #cmap=default_cmap,
                                                 show_colorbar=True)
-            plt.savefig('/workspace/stylegan2-ada-pytorch/gradshap_' + img_dir.split('/')[-1].split('.')[0] + '.png')
+            plt.savefig('/workspace/stylegan2-ada-pytorch/explainability_examples/gradshap_' + img_dir.split('/')[-1].split('.')[0] + '.png')
 
             attr_saliency = saliency_ef.attribute(image)
             attr_guidedGC = guided_gc_ef.attribute(image)
@@ -164,7 +162,7 @@ for directory in directories:
                                 show_colorbar=True,
                                 sign='all',
                                 outlier_perc=1)
-            plt.savefig('/workspace/stylegan2-ada-pytorch/attr_ig.png')
+            plt.savefig('/workspace/stylegan2-ada-pytorch/explainability_examples/attr_ig.png')
             # _ = viz.visualize_image_attr(transposed_attr_guidedGC,
             #                     transposed_image,
             #                     method='heat_map',
@@ -180,7 +178,7 @@ for directory in directories:
                                 show_colorbar=True,
                                 sign='all',
                                 outlier_perc=1)
-            plt.savefig('/workspace/stylegan2-ada-pytorch/saliency.png')
+            plt.savefig('/workspace/stylegan2-ada-pytorch/explainability_examples/saliency.png')
             # For a better visual of the attribution, the images between baseline and target are sampled 
             # using a noise tunnel (by adding gaussian noise). And when the gradients are calulcated, 
             # we smoothe them by calculating their mean squared.
@@ -195,7 +193,7 @@ for directory in directories:
                                                 ["all", "positive"],
                                                 #cmap=default_cmap,
                                                 show_colorbar=True)
-            plt.savefig('/workspace/stylegan2-ada-pytorch/attr_ig_noisetunnel_' + img_dir.split('/')[-1].split('.')[0] + '.png')
+            plt.savefig('/workspace/stylegan2-ada-pytorch/explainability_examples/attr_ig_noisetunnel_' + img_dir.split('/')[-1].split('.')[0] + '.png')
 
             noise_tunnel = NoiseTunnel(guided_gc)
 
@@ -207,5 +205,5 @@ for directory in directories:
                                                 ["all", "all"],
                                                 #cmap=default_cmap,
                                                 show_colorbar=True)
-            plt.savefig('/workspace/stylegan2-ada-pytorch/attr_guidedgc_noisetunnel_' + img_dir.split('/')[-1].split('.')[0] + '.png')
+            plt.savefig('/workspace/stylegan2-ada-pytorch/explainability_examples/attr_guidedgc_noisetunnel_' + img_dir.split('/')[-1].split('.')[0] + '.png')
             """
