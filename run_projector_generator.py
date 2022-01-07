@@ -11,7 +11,7 @@ np.random.seed(0)
 
 parser = ArgumentParser()
 parser.add_argument("--filename", type=str, default='dataset.json')
-parser.add_argument("--directory", type=str, default='/workspace/melanoma_isic_dataset/stylegan2-ada-pytorch/processed_dataset_256')
+parser.add_argument("--directory", type=str, default='/workspace/stylegan2-ada-pytorch/processed_dataset_256_SAM')
 parser.add_argument('--initial_tqdm', type=int, help='Restart projection', default=0)
 
 parser.add_argument("--task", type=str, default='project', help='Choose task project/generate',
@@ -32,14 +32,14 @@ if args.task == 'project':
     with open(os.path.join(directory, filename)) as file:
         data = json.load(file)['labels']
         
-        for img in tqdm(data, initial=args.initial_tqdm):
-            img_dir = os.path.join(directory,img[0])
-            label = img[1]
+        for img, label in tqdm(data, initial=args.initial_tqdm):
+            img_dir = os.path.join(directory,img)
+            label = 1 # FOR PROJECTING SAM DATA img[1] 
 
             execute = "python projector.py "
-            execute = execute + " --outdir=./projector"
+            execute = execute + " --outdir=" + args.outdir
             execute = execute + " --target=" + img_dir
-            execute = execute + " --network=/workspace/melanoma_isic_dataset/stylegan2-ada-pytorch/training_runs/network-snapshot-020000.pkl"
+            execute = execute + " --network=/workspace/stylegan2-ada-pytorch/training_runs/network-snapshot-020000.pkl"
             execute = execute + " --class_label " + str(label)
             execute = execute + " --num-steps 1000"
 
