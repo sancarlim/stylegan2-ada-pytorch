@@ -1,3 +1,8 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+# File       : server_mp.py
+# Modified   : 22.01.2022
+# By         : Sandra Carrasco <sandra.carrasco@ai.se>
 
 import numpy as np 
 import re

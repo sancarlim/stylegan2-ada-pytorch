@@ -1,3 +1,9 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+# File       : melanoma_cnn_efficientnet.py
+# Modified   : 12.01.2022
+# By         : Sandra Carrasco <sandra.carrasco@ai.se>
+
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -31,6 +37,8 @@ from efficientnet_pytorch import EfficientNet
 from torchvision.models import resnet50
 
 import os 
+
+import wandb
 
 import warnings
 warnings.simplefilter('ignore')
@@ -207,8 +215,8 @@ def create_split(source_dir, n_b, n_m):
         else:
             ind_1.append(i) 
 
-    ind_0=np.random.permutation(ind_0)[:n_b*1000]
-    ind_1=np.random.permutation(ind_1)[:n_m*1000]
+    # ind_0=np.random.permutation(ind_0)[:n_b*1000]
+    # ind_1=np.random.permutation(ind_1)[:n_m*1000]
 
     # ind_1 = ind_1[:round(len(ind_1)*0.16)] #Train with 15% melanoma
     
@@ -532,13 +540,9 @@ def train(model, train_loader, validate_loader, validate_loader_reals, k_fold = 
 
     loss_history=[]  
     train_acc_history=[]  
-    val_loss_history=[]  
-    val_acc_history=[] 
+    val_loss_history=[]   
     val_auc_history=[]
-    val_f1_history=[]
-
-    val_loss_r_history=[] 
-    val_auc_r_history=[]
+    val_f1_history=[] 
         
     patience = es_patience
     Total_start_time = time.time()  
@@ -800,7 +804,7 @@ if __name__ == "__main__":
         p.numel() for p in model.parameters() if p.requires_grad)
     print(f'{total_trainable_params:,} training parameters.')
 
-    loss_history, train_acc_history, val_auc_history, val_loss_history, val_f1_history, model_path = train(model, train_loader, validate_loader, validate_loader_real, fold, epochs=args.epochs, es_patience=3)
+    loss_history, train_acc_history, val_auc_history, val_loss_history, val_f1_history, model_path = train(model, train_loader, validate_loader, validate_loader_real, epochs=args.epochs, es_patience=3)
 
     del training_dataset, validation_dataset 
     gc.collect()

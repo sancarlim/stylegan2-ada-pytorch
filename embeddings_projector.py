@@ -1,6 +1,13 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+# File       : embeddings_projector.py
+# Modified   : 22.01.2022
+# By         : Sandra Carrasco <sandra.carrasco@ai.se>
+
 import numpy as np 
 import os
-from PIL import Image
+import PIL.Image as Image
+from matplotlib import pylab as P
 import cv2
 from torchvision import transforms
 from torch.utils.tensorboard import SummaryWriter
@@ -12,7 +19,9 @@ from efficientnet_pytorch import EfficientNet
 from melanoma_cnn_efficientnet import Net
 from pathlib import Path
 import random
-# import tensorflow as tf
+# from torchsummary import summary
+
+import saliency.core as saliency
 
 def select_n_random(data, labels, n=100):
     '''
@@ -45,7 +54,9 @@ if args.use_cnn:
 
     arch = EfficientNet.from_pretrained('efficientnet-b2')
     model = Net(arch=arch, return_feats=True)  
-    model.load_state_dict(torch.load('/workspace/stylegan2-ada-pytorch/CNN_trainings/melanoma_model_0_0.9225_16_12_train_reals+15melanoma.pth'))
+    # summary(model, (3, 256, 256), device='cpu')
+    model.load_state_dict(torch.load('/workspace/stylegan2-ada-pytorch/CNN_trainings/melanoma_model_0_0.9672_16_12_onlysyn.pth'))
+
     model.eval()
     model.to(device)
     images_pil = []
@@ -67,7 +78,7 @@ if args.use_cnn:
                         img_pil = transform(Image.open(img_dir).resize((100, 100)))
                         images_pil.append(img_pil)
                     
-                    if i > 6000:
+                    if i > 3200:
                         # ISIC 37k images, project only 6k random imgs
                         break
 
@@ -92,8 +103,8 @@ if args.use_cnn:
         
 else:
     # This part can be used with G_mapping embeddings (vector w) - projections in the latent space
-    directory = "/workspace/stylegan2-ada-pytorch/projector/generated-20kpkl7"   
-    emb_f = "allvectors.txt"
+    directory = "/workspace/stylegan2-ada-pytorch/projector/"   
+    emb_f = "allvectorsf.txt"
     metadata_f = "alllabelsf.txt"
     transform = transforms.ToTensor()
 
@@ -109,9 +120,16 @@ else:
     images_pil = torch.empty(len(metadata), 3, 100,100)
     labels = []
     for i, line in enumerate(metadata):
-        label = line.split(' ')[0]
-        img_name = line.split(' ')[1].split('txt')[0] + 'from.png'  # 0 img00000552.class.0.txt 
-                #line.split(' ')[1].split('.')[0] + '_' + label + '.png'    
+        label = int(line.split(' ')[0])
+        if label == 0 or label==1:
+            img_name = '00000/'+ line.split(' ')[1].split('txt')[0]+ 'from.png'
+        elif label == 4:
+            img_name = 'SAM_data/'+ line.split(' ')[1].split('txt')[0]+ 'from.png'
+        else:
+            label_name = '0' if label == 2 else '1'
+            img_name = 'generated-20kpkl/'+ line.split(' ')[1].split('.')[0] + '_' + label_name + '.jpg'
+        #img_name = line.split(' ')[1].split('txt')[0] + 'from.png'  # 0 img00000552.class.0.txt 
+            
         img_dir = os.path.join(directory,img_name)
         img = transform(Image.open(img_dir).resize((100, 100))) 
         images_pil[i] = img
