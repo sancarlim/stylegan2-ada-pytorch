@@ -527,11 +527,19 @@ class Synth_Dataset(Dataset):
         return torch.tensor(img, dtype=torch.float32), torch.tensor(target, dtype=torch.float32)
 
 
-def load_model(model = 'efficientnet'):
-    arch = EfficientNet.from_pretrained(model) if 'efficientnet' in model else torchvision.models.model(pretrained=True)
+
+def load_model(model = 'efficientnet-b2'):
+    if model == "efficientnet":
+        arch = EfficientNet.from_pretrained(model)
+    elif model == "googlenet":
+        arch = torchvision.models.googlenet(pretrained=True)
+    else:
+        arch = torchvision.models.resnet50(pretrained=True)
+        
     model = Net(arch=arch).to(device)
 
     return model
+
 
 class Net(nn.Module):
     def __init__(self, arch, return_feats=False):
@@ -541,10 +549,10 @@ class Net(nn.Module):
         if 'fgdf' in str(arch.__class__):
             self.arch.fc = nn.Linear(in_features=1280, out_features=500, bias=True)
         if 'EfficientNet' in str(arch.__class__):   
-            self.arch._fc = nn.Linear(in_features=1408, out_features=500, bias=True)
+            self.arch._fc = nn.Linear(in_features=self.arch._fc.in_features, out_features=500, bias=True)
             #self.dropout1 = nn.Dropout(0.2)
-        if 'resnet' in str(arch.__class__):   
-            self.arch.fc = nn.Linear(in_features=2048, out_features=500, bias=True)
+        else:   
+            self.arch.fc = nn.Linear(in_features=arch.fc.in_features, out_features=500, bias=True)
             
         self.ouput = nn.Linear(500, 1)
         
