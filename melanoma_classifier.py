@@ -38,7 +38,7 @@ warnings.simplefilter('ignore')
 
 classes = ('benign', 'melanoma')
 
-seed = 1234
+seed = 2022
 seed_everything(seed)
 
 # Setting up GPU for processing or CPU if GPU isn't available
@@ -52,7 +52,7 @@ writer = SummaryWriter(writer_path)
 
 
 ### TRAINING ###
-def train(model, train_loader, validate_loader, validate_loader_reals, k_fold = 0, epochs = 10, es_patience = 3):
+def train(model, train_loader, validate_loader, k_fold = 0, epochs = 10, es_patience = 3):
     # Training model
     print('Starts training...')
 
@@ -109,8 +109,7 @@ def train(model, train_loader, validate_loader, validate_loader_reals, k_fold = 
                  """            
         train_acc = correct / len(training_dataset)
 
-        val_loss, val_auc_score, val_accuracy, val_f1 = val(model, validate_loader, criterion)
-        #val_loss_r, val_auc_score_r, val_accuracy_r, val_f1_r = val(model, validate_loader_reals, criterion)
+        val_loss, val_auc_score, val_accuracy, val_f1 = val(model, validate_loader, criterion) 
         
 
         training_time = str(datetime.timedelta(seconds=time.time() - start_time))[:7]
@@ -124,7 +123,8 @@ def train(model, train_loader, validate_loader, validate_loader_reals, k_fold = 
             "Validation F1 Score: {:.3f}".format(val_f1),
             "Training Time: {}".format( training_time))
 
-        wandb.log({'train/Training acc': train_acc, 'epoch':e, 'val/Validation Acc': val_accuracy,'val/Validation Loss': val_loss/len(validate_loader)})
+        wandb.log({'train/Training acc': train_acc, 'epoch':e, 'val/Validation Acc': val_accuracy,
+                    'val/Validation Auc': val_auc_score, 'val/Validation Loss': val_loss/len(validate_loader)})
 
         """ 
         # Log in Tensorboard
@@ -298,10 +298,10 @@ if __name__ == "__main__":
     testing_dataset = CustomDataset(df = validation_df, train = True, transforms = testing_transforms ) 
                    
 
-    train_loader = torch.utils.data.DataLoader(training_dataset, batch_size=32, num_workers=4, shuffle=True)
-    validate_loader = torch.utils.data.DataLoader(validation_dataset, batch_size=16, shuffle = False)
-    validate_loader_real = torch.utils.data.DataLoader(validation_dataset, batch_size=16, shuffle = False)
-    test_loader = torch.utils.data.DataLoader(testing_dataset, batch_size=16, shuffle = False)
+    train_loader = torch.utils.data.DataLoader(training_dataset, batch_size=32, num_workers=4, worker_init_fn=utils.seed_worker, shuffle=True)
+    validate_loader = torch.utils.data.DataLoader(validation_dataset, batch_size=16, num_workers=4, worker_init_fn=utils.seed_worker, shuffle = False)
+    # validate_loader_real = torch.utils.data.DataLoader(validation_dataset, batch_size=16, num_workers=4, worker_init_fn=utils.seed_worker, shuffle = False)
+    test_loader = torch.utils.data.DataLoader(testing_dataset, batch_size=16, num_workers=4, worker_init_fn=utils.seed_worker, shuffle = False)
     print(len(training_dataset), len(validation_dataset))
     print(len(train_loader),len(validate_loader),len(test_loader))
 
@@ -332,8 +332,7 @@ if __name__ == "__main__":
         p.numel() for p in model.parameters() if p.requires_grad)
     print(f'{total_trainable_params:,} training parameters.')
 
-    model_path = train(model, train_loader, validate_loader, validate_loader_real,
-                                        epochs=args.epochs, es_patience=args.es)
+    model_path = train(model, train_loader, validate_loader, epochs=args.epochs, es_patience=args.es)
 
     del training_dataset, validation_dataset 
     gc.collect()

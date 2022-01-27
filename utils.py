@@ -50,6 +50,10 @@ testing_transforms = torchvision.transforms.Compose([torchvision.transforms.Resi
                                         torchvision.transforms.Normalize([0.485, 0.456, 0.406], 
                                                             [0.229, 0.224, 0.225])])
 
+def seed_worker(worker_id):
+    worker_seed = torch.initial_seed() % 2**32
+    np.random.seed(worker_seed)
+    random.seed(worker_seed)
 
 # Creating seeds to make results reproducible
 def seed_everything(seed_value):
@@ -62,7 +66,7 @@ def seed_everything(seed_value):
         torch.cuda.manual_seed(seed_value)
         torch.cuda.manual_seed_all(seed_value)
         torch.backends.cudnn.deterministic = True
-        torch.backends.cudnn.benchmark = True
+        torch.backends.cudnn.benchmark = False
 
 
 
