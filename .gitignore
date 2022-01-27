@@ -16,3 +16,4 @@ __pycache__/
 .gitignore.swp
 *tar*
 *checkpoint*
+wandb/

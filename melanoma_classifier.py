@@ -100,10 +100,13 @@ def train(model, train_loader, validate_loader, validate_loader_reals, k_fold = 
             correct += (train_preds.cpu() == labels.cpu().unsqueeze(1)).sum().item()
             
             if i % 500 == 1:  # == N every N minibatches 
+                wandb.log({f'train/training_loss': loss, 'epoch':e})
+                """ 
+                # Log in Tensorboard
                 writer.add_figure('predictions vs. actuals',
                             plot_classes_preds(model, images, labels.type(torch.int)),
                             global_step=e+1)
-                            
+                 """            
         train_acc = correct / len(training_dataset)
 
         val_loss, val_auc_score, val_accuracy, val_f1 = val(model, validate_loader, criterion)
@@ -120,18 +123,23 @@ def train(model, train_loader, validate_loader, validate_loader_reals, k_fold = 
             "Validation AUC Score: {:.3f}".format(val_auc_score),
             "Validation F1 Score: {:.3f}".format(val_f1),
             "Training Time: {}".format( training_time))
-            
+
+        wandb.log({'train/Training acc': train_acc, 'epoch':e, 'val/Validation Acc': val_accuracy,'val/Validation Loss': val_loss/len(validate_loader)})
+
+        """ 
+        # Log in Tensorboard
         writer.add_scalar('training loss',  running_loss/len(train_loader), e+1 )
         writer.add_scalar('Training acc', train_acc, e+1 )
         writer.add_scalar('Validation AUC Score', val_auc_score, e+1 )
-        
+         """
 
         scheduler.step(val_auc_score)
                 
         if val_auc_score > best_val:
-            best_val = val_auc_score
+            best_val = val_auc_score 
+            wandb.run.summary["best_auc_score"] = val_auc_score
             patience = es_patience  # Resetting patience since we have new best validation accuracy
-            model_path = os.path.join(writer_path, f'./melanoma_model_{k_fold}_{best_val:.4f}_{datetime.datetime.now()}.pth')
+            model_path = os.path.join(writer_path, f'./classifier_{args.model}_{best_val:.4f}_{datetime.datetime.now()}.pth')
             torch.save(model.state_dict(), model_path)  # Saving current best model
             print(f'Saving model in {model_path}')
         else:
@@ -156,7 +164,7 @@ def train(model, train_loader, validate_loader, validate_loader_reals, k_fold = 
     del train_loader, validate_loader, images
     gc.collect()
 
-    return loss_history, train_acc_history, val_auc_history, val_loss_history, val_f1_history, model_path #, val_loss_r_history, val_auc_r_history
+    return model_path #, val_loss_r_history, val_auc_r_history
 
               
 def val(model, validate_loader, criterion):          
@@ -232,14 +240,18 @@ if __name__ == "__main__":
     parser = ArgumentParser()
     parser.add_argument("--syn_data_path", type=str, default='/workspace/generated-no-valset')
     parser.add_argument("--real_data_path", type=str, default='/workspace/melanoma_isic_dataset')
-    parser.add_argument("--model", type=str, default='efficientnet', choices=["efficientnet", "googlenet", "resnet50"])
+    parser.add_argument("--model", type=str, default='efficientnet-b2', choices=["efficientnet-b2", "googlenet", "resnet50"])
     parser.add_argument("--epochs", type=int, default='30')
+    parser.add_argument("--es", type=int, default='4', help = "Iterations for Early Stopping")
     parser.add_argument("--kfold", type=int, default='3', help='number of folds for stratisfied kfold')
     parser.add_argument("--unbalanced", action='store_true', help='train with 15% melanoma')
+    parser.add_argument("--only_reals", action='store_true', help='train using only real images')
     parser.add_argument("--only_syn", action='store_true', help='train using only synthetic images')
     parser.add_argument("--synt_n_imgs",  type=str, default="0,15", help='n benign, n melanoma K synthetic images to add to the real data')
     args = parser.parse_args()
 
+    wandb.init(project="dai-healthcare" , entity='eyeforai', group='isic', tags=["whole isic training"], config={"model": args.model})
+    wandb.config.update(args) 
 
     # under_sampler = RandomUnderSampler(random_state=42)
     # train_df_res, _ = under_sampler.fit_resample(train_df, train_df.target)
@@ -259,6 +271,8 @@ if __name__ == "__main__":
     synt_train_df = load_synthetic_data(args.syn_data_path, args.synt_n_imgs, args.only_syn)
     if args.only_syn:
         train_df = synt_train_df
+    elif args.only_reals:
+        train_df = isic_train_df
     else: 
         train_df = pd.concat([isic_train_df, synt_train_df]) 
 
@@ -305,6 +319,7 @@ if __name__ == "__main__":
 
     # Load model
     model = load_model(args.model)
+    print(f'Model {args.model} loaded.')
 
     # If we need to freeze the pretrained model parameters to avoid backpropogating through them, turn to "False"
     for parameter in model.parameters():
@@ -317,7 +332,8 @@ if __name__ == "__main__":
         p.numel() for p in model.parameters() if p.requires_grad)
     print(f'{total_trainable_params:,} training parameters.')
 
-    loss_history, train_acc_history, val_auc_history, val_loss_history, val_f1_history, model_path = train(model, train_loader, validate_loader, validate_loader_real, epochs=args.epochs, es_patience=3)
+    model_path = train(model, train_loader, validate_loader, validate_loader_real,
+                                        epochs=args.epochs, es_patience=args.es)
 
     del training_dataset, validation_dataset 
     gc.collect()
