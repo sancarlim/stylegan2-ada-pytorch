@@ -11,8 +11,7 @@ from pathlib import Path
 from argparse import ArgumentParser 
 import torch
 from torch import nn
-from torch import optim
-from torchvision import datasets, transforms, models, utils
+from torch import optim 
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torch.utils.tensorboard import SummaryWriter 
 
@@ -25,8 +24,6 @@ import datetime
 from sklearn.model_selection import StratifiedKFold, GroupKFold, train_test_split
 from sklearn.metrics import accuracy_score, roc_auc_score, confusion_matrix, f1_score
 
-from efficientnet_pytorch import EfficientNet
-from torchvision.models import resnet50
 
 import os 
 
@@ -247,10 +244,11 @@ if __name__ == "__main__":
     parser.add_argument("--unbalanced", action='store_true', help='train with 15% melanoma')
     parser.add_argument("--only_reals", action='store_true', help='train using only real images')
     parser.add_argument("--only_syn", action='store_true', help='train using only synthetic images')
+    parser.add_argument("--tags", type=str, default='whole isic')
     parser.add_argument("--synt_n_imgs",  type=str, default="0,15", help='n benign, n melanoma K synthetic images to add to the real data')
     args = parser.parse_args()
 
-    wandb.init(project="dai-healthcare" , entity='eyeforai', group='isic', tags=["whole isic training"], config={"model": args.model})
+    wandb.init(project="dai-healthcare" , entity='eyeforai', group='isic', tags=[args.tags], config={"model": args.model})
     wandb.config.update(args) 
 
     # under_sampler = RandomUnderSampler(random_state=42)
@@ -298,10 +296,10 @@ if __name__ == "__main__":
     testing_dataset = CustomDataset(df = validation_df, train = True, transforms = testing_transforms ) 
                    
 
-    train_loader = torch.utils.data.DataLoader(training_dataset, batch_size=32, num_workers=4, worker_init_fn=utils.seed_worker, shuffle=True)
-    validate_loader = torch.utils.data.DataLoader(validation_dataset, batch_size=16, num_workers=4, worker_init_fn=utils.seed_worker, shuffle = False)
-    # validate_loader_real = torch.utils.data.DataLoader(validation_dataset, batch_size=16, num_workers=4, worker_init_fn=utils.seed_worker, shuffle = False)
-    test_loader = torch.utils.data.DataLoader(testing_dataset, batch_size=16, num_workers=4, worker_init_fn=utils.seed_worker, shuffle = False)
+    train_loader = torch.utils.data.DataLoader(training_dataset, batch_size=32, num_workers=4, worker_init_fn=seed_worker, shuffle=True)
+    validate_loader = torch.utils.data.DataLoader(validation_dataset, batch_size=16, num_workers=4, worker_init_fn=seed_worker, shuffle = False)
+    # validate_loader_real = torch.utils.data.DataLoader(validation_dataset, batch_size=16, num_workers=4, worker_init_fn=seed_worker, shuffle = False)
+    test_loader = torch.utils.data.DataLoader(testing_dataset, batch_size=16, num_workers=4, worker_init_fn=seed_worker, shuffle = False)
     print(len(training_dataset), len(validation_dataset))
     print(len(train_loader),len(validate_loader),len(test_loader))
 

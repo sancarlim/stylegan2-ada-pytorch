@@ -533,7 +533,7 @@ class Synth_Dataset(Dataset):
 
 
 def load_model(model = 'efficientnet-b2'):
-    if model == "efficientnet":
+    if "efficientnet" in model:
         arch = EfficientNet.from_pretrained(model)
     elif model == "googlenet":
         arch = torchvision.models.googlenet(pretrained=True)
