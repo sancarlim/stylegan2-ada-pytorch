@@ -17,7 +17,8 @@ from torchvision import transforms
 from efficientnet_pytorch import EfficientNet
 import seaborn as sb
 from argparse import ArgumentParser 
-from melanoma_cnn_efficientnet import Net, Synth_Dataset, test, CustomDataset , confussion_matrix
+from melanoma_classifier import test
+from utils import Net, Synth_Dataset,  CustomDataset , confussion_matrix
 import pandas as pd
 from sklearn.model_selection import train_test_split
 from datetime import date, datetime
