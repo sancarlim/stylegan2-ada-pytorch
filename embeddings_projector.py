@@ -16,7 +16,7 @@ from argparse import ArgumentParser
 import json
 from tqdm import tqdm
 from efficientnet_pytorch import EfficientNet
-from melanoma_cnn_efficientnet import Net
+from utils import Net
 from pathlib import Path
 import random
 # from torchsummary import summary
@@ -49,7 +49,7 @@ testing_transforms = transforms.Compose([transforms.Resize(256),
                                                                 [0.229, 0.224, 0.225])])
 
 if args.use_cnn:
-    directories = ["/workspace/stylegan2-ada-pytorch/processed_dataset_256_SAM", "/workspace/stylegan2-ada-pytorch/processed_dataset_256"]
+    directories = ["/workspace/stylegan2-ada-pytorch/projector/00000"]
     filename = "dataset.json"
 
     arch = EfficientNet.from_pretrained('efficientnet-b2')
@@ -62,6 +62,7 @@ if args.use_cnn:
     images_pil = []
     metadata_f = [] 
     embeddings = []
+    """ 
     for directory in directories:
         with open(os.path.join(directory, filename)) as file:
             data = json.load(file)['labels']
@@ -81,10 +82,19 @@ if args.use_cnn:
                     if i > 3200:
                         # ISIC 37k images, project only 6k random imgs
                         break
-
+    """
     # Repeat the process for randomly generated data
-    images = [str(f) for f in sorted(Path("/workspace/stylegan2-ada-pytorch/projector/generated-20kpkl7").rglob('*jpg')) if os.path.isfile(f)]
-    labels = [2 if f.split('.jpg')[0][-1] == '0' else 3 for f in images]
+    images = [str(f) for f in sorted(Path("/workspace/stylegan2-ada-pytorch/projector/00000").glob('*png')) if os.path.isfile(f)] 
+    #labels = [2 if f.split('.jpg')[0][-1] == '0' else 3 for f in images]
+    labels = []
+    for f in images:
+        if "from" in f:
+            labels.append( f.split('.from.png')[0][-1] )
+        else:
+            labels.append( str( int(f.split('.to.png')[0][-1])+2 ) )
+        
+
+
     with torch.no_grad():
         for img_dir, label in tqdm(zip(images, labels)):
             img_net = torch.tensor(testing_transforms(Image.open(img_dir)).unsqueeze(0), dtype=torch.float32).to(device)
@@ -99,7 +109,7 @@ if args.use_cnn:
     if args.sprite:
         images_pil = torch.stack(images_pil)
     # default `log_dir` is "runs" - we'll be more specific here
-    writer = SummaryWriter('/workspace/stylegan2-ada-pytorch/CNN_embeddings_projector/all_net_trained_onlysyn') 
+    writer = SummaryWriter('/workspace/stylegan2-ada-pytorch/CNN_embeddings_projector/projections_vs_reals_nosprite') 
         
 else:
     # This part can be used with G_mapping embeddings (vector w) - projections in the latent space
