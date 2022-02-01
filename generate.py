@@ -39,6 +39,8 @@ def num_range(s: str) -> List[int]:
 @click.option('--network', 'network_pkl', help='Network pickle filename', required=True)
 @click.option('--seeds', type=num_range, help='List of random seeds')
 @click.option('--retrieve_embeddings', is_flag=True)
+@click.option('--neighbors', is_flag=True, help='Generate random neighbors of a seed')
+@click.option('--diameter', type=float, help='Distance around seed to sample from', default=0.1)
 @click.option('--num_imgs', type=int, help='Number of images to generate with random seeds if seeds=None')
 @click.option('--trunc', 'truncation_psi', type=float, help='Truncation psi', default=1, show_default=True)
 @click.option('--class', 'class_idx', type=int, help='Class label (unconditional if not specified)')
@@ -49,6 +51,9 @@ def generate_images(
     ctx: click.Context,
     network_pkl: str,
     seeds: Optional[List[int]],
+    retrieve_embeddings: Optional[bool],
+    neighbors: Optional[bool],
+    diameter: float,
     truncation_psi: float,
     noise_mode: str,
     outdir: str,
@@ -88,23 +93,6 @@ def generate_images(
 
     os.makedirs(outdir, exist_ok=True)
 
-    # Synthesize the result of a W projection.
-    if projected_w is not None:
-        if seeds is not None:
-            print ('warn: --seeds is ignored when using --projected-w')
-        print(f'Generating images from projected W "{projected_w}"')
-        ws = np.load(projected_w)['w']
-        ws = torch.tensor(ws, device=device) # pylint: disable=not-callable
-        assert ws.shape[1:] == (G.num_ws, G.w_dim)
-        for idx, w in enumerate(ws):
-            img = G.synthesis(w.unsqueeze(0), noise_mode=noise_mode)
-            img = (img.permute(0, 2, 3, 1) * 127.5 + 128).clamp(0, 255).to(torch.uint8)
-            img = PIL.Image.fromarray(img[0].cpu().numpy(), 'RGB').save(f'{outdir}/proj{idx:02d}.jpg')
-        return
-
-    if seeds is None:
-        seeds=list(np.random.randint(0,1000000,num_imgs))
-        #ctx.fail('--seeds option is required when not using --projected-w')
 
     # Labels.
     label = torch.zeros([1, G.c_dim], device=device)
@@ -116,13 +104,47 @@ def generate_images(
         if class_idx is not None:
             print ('warn: --class=lbl ignored when running on an unconditional network')
 
+
+    # Synthesize the result of a W projection.
+    if projected_w is not None:
+        if seeds is not None:
+            print ('warn: --seeds is ignored when using --projected-w')
+        print(f'Generating images from projected W "{projected_w}"')
+        ws_np = np.load(projected_w)['w']
+        ws = torch.tensor(ws_np, device=device) # pylint: disable=not-callable
+        assert ws.shape[1:] == (G.num_ws, G.w_dim)
+        for idx, w in enumerate(ws):
+            img = G.synthesis(w.unsqueeze(0), noise_mode=noise_mode)
+            img = (img.permute(0, 2, 3, 1) * 127.5 + 128).clamp(0, 255).to(torch.uint8)
+            img = PIL.Image.fromarray(img[0].cpu().numpy(), 'RGB').save(f'{outdir}/proj{idx:02d}.jpg')
+        
+        
+        return
+
+    if seeds is None:
+        seeds=list(np.random.randint(0,1000000,num_imgs))
+        #ctx.fail('--seeds option is required when not using --projected-w')
+
+    
     # Generate images.
     for seed_idx, seed in enumerate(seeds):
         print('Generating image for seed %d (%d/%d) ...' % (seed, seed_idx, len(seeds)))
-        z = torch.from_numpy(np.random.RandomState(seed).randn(1, G.z_dim)).to(device)
+        z_np = np.random.RandomState(seed).randn(1, G.z_dim)
+        z = torch.from_numpy(z_np).to(device)
         img = G(z, label, truncation_psi=truncation_psi, noise_mode=noise_mode)
         img = (img.permute(0, 2, 3, 1) * 127.5 + 128).clamp(0, 255).to(torch.uint8)
         PIL.Image.fromarray(img[0].cpu().numpy(), 'RGB').save(f'{outdir}/seed{seed:04d}_{class_idx}.jpg')
+        if neighbors:  
+            print('Generating neighbors for seed {seed}...')
+            z_prefix = 'seed%04d_neighbor_' % seed
+            for s in range(num_imgs):
+                random = np.random.uniform(-diameter,diameter,[1,512])
+                #  zs.append(np.clip((og_z+random),-1,1))
+                new_z = torch.from_numpy(np.clip(np.add(z_np,random),-1,1)).to(device)
+                img = G(new_z, label, truncation_psi=truncation_psi, noise_mode=noise_mode)
+                img = (img.permute(0, 2, 3, 1) * 127.5 + 128).clamp(0, 255).to(torch.uint8)
+                PIL.Image.fromarray(img[0].cpu().numpy(), 'RGB').save(f'{outdir}/{z_prefix}{s:03d}.jpg')
+        
         if retrieve_embeddings:
             ws = G.mapping(z, label, truncation_psi=1)
             txtfilename = f'{outdir}/'+os.path.basename(f'seed{seed:04d}').split('.')[0]+'.class.' + str(class_idx) +'.txt'
