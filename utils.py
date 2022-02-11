@@ -304,7 +304,7 @@ def load_isic_data(path):
     validation_df=pd.DataFrame(valid_split)
     return train_df, validation_df
 
-def load_synthetic_data(syn_data_path, synt_n_imgs, only_syn):
+def load_synthetic_data(syn_data_path, synt_n_imgs, only_syn=False):
     #Load all images and labels from path
     input_images = [str(f) for f in sorted(Path(syn_data_path).rglob('*')) if os.path.isfile(f)]
     y = [0 if f.split('.jpg')[0][-1] == '0' else 1 for f in input_images]

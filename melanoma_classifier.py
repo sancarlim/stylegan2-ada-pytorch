@@ -130,11 +130,12 @@ def train(model, train_loader, validate_loader, k_fold = 0, epochs = 10, es_pati
         writer.add_scalar('Validation AUC Score', val_auc_score, e+1 )
          """
 
-        scheduler.step(val_auc_score)
+        scheduler.step(val_accuracy)
                 
-        if val_auc_score > best_val:
-            best_val = val_auc_score 
+        if val_accuracy > best_val:
+            best_val = val_accuracy 
             wandb.run.summary["best_auc_score"] = val_auc_score
+            wandb.run.summary["best_acc_score"] = val_accuracy
             patience = es_patience  # Resetting patience since we have new best validation accuracy
             model_path = os.path.join(writer_path, f'./classifier_{args.model}_{best_val:.4f}_{datetime.datetime.now()}.pth')
             torch.save(model.state_dict(), model_path)  # Saving current best model
@@ -199,6 +200,8 @@ def val(model, validate_loader, criterion):
 def test(model, test_loader):
     test_preds=[]
     all_labels=[]
+    misclassified = []
+    low_confidence = []
     with torch.no_grad():
         
         for _, (test_images, test_labels) in enumerate(test_loader):
@@ -215,6 +218,11 @@ def test(model, test_loader):
         test_pred2 = torch.tensor(test_pred)
         test_gt = np.concatenate(all_labels)
         test_gt2 = torch.tensor(test_gt)
+
+        indeces_misclassified = np.where(test_gt != np.round(test_pred))[0]
+        well_classified = list(set(list(range(0, len(test_gt2)))) - set(indeces_misclassified.tolist()))
+        edge_cases = np.where( (test_gt[well_classified] - test_pred[well_classified]) > 0.25 )[0]
+        
         try:
             test_accuracy = accuracy_score(test_gt2.cpu(), torch.round(test_pred2))
             test_auc_score = roc_auc_score(test_gt, test_pred)

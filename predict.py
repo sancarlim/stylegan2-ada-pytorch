@@ -18,7 +18,7 @@ from efficientnet_pytorch import EfficientNet
 import seaborn as sb
 from argparse import ArgumentParser 
 from melanoma_classifier import test
-from utils import Net, Synth_Dataset,  CustomDataset , confussion_matrix
+from utils import load_model, load_isic_data, load_synthetic_data,  CustomDataset , confussion_matrix
 import pandas as pd
 from sklearn.model_selection import train_test_split
 from datetime import date, datetime
@@ -156,43 +156,37 @@ if __name__ == "__main__":
     parser = ArgumentParser()
     #parser.add_argument("--path", type=str, default='/home/Data/generated/seed9984_1.png', help="Path to image to predict")
     parser.add_argument('--seeds', type=num_range, help='List of random seeds Ex. 0-3 or 0,1,2')
-    parser.add_argument("--data_path", type=str, default='/workspace/melanoma_isic_dataset')
+    parser.add_argument("--data_path", type=str, default='/workspace/generated-no-valset')
     args = parser.parse_args()
 
     # Setting up GPU for processing or CPU if GPU isn't available
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     # Load model
-    arch = EfficientNet.from_pretrained('efficientnet-b2')
-    model = Net(arch=arch)  
+    model = load_model()
     model.load_state_dict(torch.load('/workspace/stylegan2-ada-pytorch/CNN_trainings/melanoma_model_0_0.9225_16_12_train_reals+15melanoma.pth'))
     model.eval()
-    model.to(device)
 
-    # TEST
-    #testing_dataset = Synth_Dataset(source_dir = args.data_path, transform = testing_transforms, 
-    #                                id_list = None, test=True, unbalanced=False)    
     
-    input_images = [str(f) for f in sorted(Path("/workspace/stylegan2-ada-pytorch/processed_dataset_512_SAM").rglob('*jpg')) if os.path.isfile(f)]
-    y = [1 for i in range(len(input_images))]
-    test_df = pd.DataFrame({'image_name': input_images, 'target': y})
-    """ 
-    # For testing with ISIC dataset
-    df = pd.read_csv(os.path.join(args.data_path , 'train_concat.csv')) 
-    train_img_dir = os.path.join(args.data_path ,'train/train/')
-    
-    train_split, valid_split = train_test_split (df, stratify=df.target, test_size = 0.20, random_state=42) 
-    validation_df=pd.DataFrame(valid_split)
-    validation_df['image_name'] = [os.path.join(train_img_dir, validation_df.iloc[index]['image_name'] + '.jpg') for index in range(len(validation_df))]
-    """
+    if "SAM" in args.data_path:
+        input_images = [str(f) for f in sorted(Path("/workspace/stylegan2-ada-pytorch/processed_dataset_512_SAM").rglob('*jpg')) if os.path.isfile(f)]
+        y = [1 for i in range(len(input_images))]
+        test_df = pd.DataFrame({'image_name': input_images, 'target': y})
+    elif "isic" in args.data_path:
+        # For testing with ISIC dataset
+        _, test_df = load_isic_data(args.data_path)
+    else: 
+        test_df = load_synthetic_data(args.data_path, "3,3")
+
+
     testing_dataset = CustomDataset(df = test_df, train = True, transforms = testing_transforms ) 
     test_loader = torch.utils.data.DataLoader(testing_dataset, batch_size=16, shuffle = False)                                                    
     test_pred, test_gt, test_accuracy = test(model, test_loader)  
-    confussion_matrix(test_gt, test_pred, test_accuracy)
+    # confussion_matrix(test_gt, test_pred, test_accuracy)
 
     # Plot diagnosis 
-    for seed_idx, seed in enumerate(args.seeds):
+    """ for seed_idx, seed in enumerate(args.seeds):
         print('Predicting image for seed %d (%d/%d) ...' % (seed, seed_idx, len(args.seeds)))
         path = '/home/Data/generated/seed' + str(seed).zfill(4) 
         path += '_0.png' if seed <= 5000 else '_1.png'
-        plot_diagnosis(path, model)
+        plot_diagnosis(path, model) """

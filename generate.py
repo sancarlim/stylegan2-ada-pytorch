@@ -94,6 +94,24 @@ def generate_images(
     os.makedirs(outdir, exist_ok=True)
 
 
+    # Synthesize the result of a W projection.
+    if projected_w is not None:
+        if seeds is not None:
+            print ('warn: --seeds is ignored when using --projected-w')
+        print(f'Generating images from projected W "{projected_w}"')
+        ws = np.load(projected_w)['w']
+        ws = torch.tensor(ws, device=device) # pylint: disable=not-callable
+        assert ws.shape[1:] == (G.num_ws, G.w_dim)
+        for idx, w in enumerate(ws):
+            img = G.synthesis(w.unsqueeze(0), noise_mode=noise_mode)
+            img = (img.permute(0, 2, 3, 1) * 127.5 + 128).clamp(0, 255).to(torch.uint8)
+            img = PIL.Image.fromarray(img[0].cpu().numpy(), 'RGB').save(f'{outdir}/proj{idx:02d}.jpg')
+        return
+
+    if seeds is None:
+        seeds=list(np.random.randint(0,1000000,num_imgs))
+        #ctx.fail('--seeds option is required when not using --projected-w')
+
     # Labels.
     label = torch.zeros([1, G.c_dim], device=device)
     if G.c_dim != 0:
@@ -104,28 +122,6 @@ def generate_images(
         if class_idx is not None:
             print ('warn: --class=lbl ignored when running on an unconditional network')
 
-
-    # Synthesize the result of a W projection.
-    if projected_w is not None:
-        if seeds is not None:
-            print ('warn: --seeds is ignored when using --projected-w')
-        print(f'Generating images from projected W "{projected_w}"')
-        ws_np = np.load(projected_w)['w']
-        ws = torch.tensor(ws_np, device=device) # pylint: disable=not-callable
-        assert ws.shape[1:] == (G.num_ws, G.w_dim)
-        for idx, w in enumerate(ws):
-            img = G.synthesis(w.unsqueeze(0), noise_mode=noise_mode)
-            img = (img.permute(0, 2, 3, 1) * 127.5 + 128).clamp(0, 255).to(torch.uint8)
-            img = PIL.Image.fromarray(img[0].cpu().numpy(), 'RGB').save(f'{outdir}/proj{idx:02d}.jpg')
-        
-        
-        return
-
-    if seeds is None:
-        seeds=list(np.random.randint(0,1000000,num_imgs))
-        #ctx.fail('--seeds option is required when not using --projected-w')
-
-    
     # Generate images.
     for seed_idx, seed in enumerate(seeds):
         print('Generating image for seed %d (%d/%d) ...' % (seed, seed_idx, len(seeds)))
