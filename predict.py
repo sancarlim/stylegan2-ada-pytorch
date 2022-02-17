@@ -147,17 +147,18 @@ def plot_diagnosis(predict_image_path, model,label):
     imshow(image, plot_1)
     font = {"color": 'g'} if 'Benign' in classes and label == 0 or 'Melanoma' in classes and label == 1 else {"color": 'r'}
     plot_1.set_title(f"Diagnosis: {classes}, Output (prob) {probs[0]:.4f}, Label: {label}", fontdict=font);
-    plt.savefig(f'/workspace/stylegan2-ada-pytorch/predictions/prediction_{img_nb}.png')
+    plt.savefig(f'{args.out_path}/prediction_{img_nb}.png')
 
 
 
 
 if __name__ == "__main__":
-    parser = ArgumentParser()
-    #parser.add_argument("--image_path", type=str, default='/home/Data/generated/seed9984_1.png', help="Path to image to predict")
+    parser = ArgumentParser() 
     parser.add_argument('--seeds', type=num_range, help='List of random seeds Ex. 0-3 or 0,1,2')
     parser.add_argument("--data_path", type=str, default='/workspace/generated-no-valset')
     parser.add_argument("--model_path", type=str, default='/workspace/stylegan2-ada-pytorch/CNN_trainings/melanoma_model_0_0.9225_16_12_train_reals+15melanoma.pth')
+    parser.add_argument("--out_path", type=str, default='', help='output path for confussion matrix')
+    
     args = parser.parse_args()
 
     # Setting up GPU for processing or CPU if GPU isn't available
@@ -183,7 +184,7 @@ if __name__ == "__main__":
     testing_dataset = CustomDataset(df = test_df, train = True, transforms = testing_transforms ) 
     test_loader = torch.utils.data.DataLoader(testing_dataset, batch_size=16, shuffle = False)                                                    
     test_pred, test_gt, test_accuracy = test(model, test_loader)  
-    # confussion_matrix(test_gt, test_pred, test_accuracy)
+    confussion_matrix(test_gt, test_pred, test_accuracy, args.out_path)
 
     # Plot diagnosis 
     """ for seed_idx, seed in enumerate(args.seeds):
