@@ -12,8 +12,8 @@ import torchvision
 import pandas as pd
 import seaborn as sb
 import datetime
-from sklearn.model_selection import StratifiedKFold, GroupKFold, train_test_split
-from sklearn.metrics import accuracy_score, roc_auc_score, confusion_matrix, f1_score
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import confusion_matrix
 
 from pathlib import Path
 import random
@@ -27,28 +27,25 @@ transformer = torchvision.transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.
 classes = ('benign', 'melanoma')
 
 # Defining transforms for the training, validation, and testing sets
-training_transforms = torchvision.transforms.Compose([#Microscope(),
-                                        #AdvancedHairAugmentation(),
+training_transforms = torchvision.transforms.Compose([
                                         torchvision.transforms.RandomRotation(30),
-                                        #transforms.RandomResizedCrop(256, scale=(0.8, 1.0)),
                                         torchvision.transforms.RandomHorizontalFlip(),
                                         torchvision.transforms.RandomVerticalFlip(),
-                                        #transforms.ColorJitter(brightness=32. / 255.,saturation=0.5,hue=0.01),
                                         torchvision.transforms.ToTensor(),
                                         torchvision.transforms.Normalize([0.485, 0.456, 0.406], 
-                                                            [0.229, 0.224, 0.225])])
+                                                                         [0.229, 0.224, 0.225])])
 
 validation_transforms = torchvision.transforms.Compose([torchvision.transforms.Resize(256),
                                             torchvision.transforms.CenterCrop(256),
                                             torchvision.transforms.ToTensor(),
                                             torchvision.transforms.Normalize([0.485, 0.456, 0.406], 
-                                                                [0.229, 0.224, 0.225])])
+                                                                             [0.229, 0.224, 0.225])])
 
 testing_transforms = torchvision.transforms.Compose([torchvision.transforms.Resize(256),
                                         torchvision.transforms.CenterCrop(256),
                                         torchvision.transforms.ToTensor(),
                                         torchvision.transforms.Normalize([0.485, 0.456, 0.406], 
-                                                            [0.229, 0.224, 0.225])])
+                                                                         [0.229, 0.224, 0.225])])
 
 def seed_worker(worker_id):
     worker_seed = torch.initial_seed() % 2**32
@@ -61,14 +58,12 @@ def seed_everything(seed_value):
     random.seed(seed_value)
     torch.manual_seed(seed_value)
     os.environ['PYTHONHASHSEED'] = str(seed_value)
-    
+
     if torch.cuda.is_available(): 
         torch.cuda.manual_seed(seed_value)
         torch.cuda.manual_seed_all(seed_value)
         torch.backends.cudnn.deterministic = True
         torch.backends.cudnn.benchmark = False
-
-
 
 def process_image(image_path):
     ''' Scales, crops, and normalizes a PIL image for a PyTorch model,
@@ -134,8 +129,6 @@ def predict(image_path, model, topk=1): #just 2 classes from 1 single output
     
     # Convert image to PyTorch tensor first
     image = torch.from_numpy(image).type(torch.cuda.FloatTensor)
-    #print(image.shape)
-    #print(type(image))
     
     # Returns a new tensor with a dimension of size one inserted at the specified position.
     image = image.unsqueeze(0)
@@ -293,8 +286,6 @@ def PreprocessImages(images):
 def load_isic_data(path):
     # ISIC dataset 
     df = pd.read_csv(os.path.join(path , 'train_concat.csv'))
-    # test_df = pd.read_csv(os.path.join(args.data_path ,'melanoma_external_256/test.csv'))
-    # test_img_dir = os.path.join(args.data_path , 'melanoma_external_256/test/test/')
     train_img_dir = os.path.join(path ,'train/train/')
     
     df['image_name'] = [os.path.join(train_img_dir, df.iloc[index]['image_name'] + '.jpg') for index in range(len(df))]
@@ -310,160 +301,24 @@ def load_synthetic_data(syn_data_path, synt_n_imgs, only_syn=False):
     y = [0 if f.split('.jpg')[0][-1] == '0' else 1 for f in input_images]
     
     ind_0, ind_1 = [], []
-    for i, f in enumerate(input_images):
-        if f.split('.')[0][-1] == '0':
+    for i, _ in enumerate(input_images):
+        if y[i] == 0:
             ind_0.append(i)
         else:
             ind_1.append(i) 
 
     # Select number of melanomas and benign samples
-    n_b, n_m = [int(i) for i in synt_n_imgs.split(',') ] if not only_syn else [1000,1000]
-    ind_0=np.random.permutation(ind_0)[:n_b*1000]
-    ind_1=np.random.permutation(ind_1)[:n_m*1000]
+    n_b, n_m = [float(i) for i in synt_n_imgs.split(',') ] if not only_syn else [1000,1000]
+    ind_0=np.random.permutation(ind_0)[:int(n_b*1000)]
+    ind_1=np.random.permutation(ind_1)[:int(n_m*1000)]
 
     id_list = np.append(ind_0, ind_1) 
 
     train_img = [input_images[int(i)] for i in id_list]
     train_gt = [y[int(i)] for i in id_list]
-    # train_img, test_img, train_gt, test_gt = train_test_split(input_images, y, stratify=y, test_size=0.2, random_state=3)
     train_df = pd.DataFrame({'image_name': train_img, 'target': train_gt})
     
     return train_df 
-
-
-class AdvancedHairAugmentation:
-    """
-    Impose an image of a hair to the target image
-
-    Args:
-        hairs (int): maximum number of hairs to impose
-        hairs_folder (str): path to the folder with hairs images
-    """
-
-    def __init__(self, hairs: int = 5, hairs_folder: str = "../input/melanoma-hairs"):
-        self.hairs = hairs
-        self.hairs_folder = hairs_folder
-
-    def __call__(self, img):
-        """
-        Args:
-            img (PIL Image): Image to draw hairs on.
-
-        Returns:
-            PIL Image: Image with drawn hairs.
-        """
-        n_hairs = random.randint(0, self.hairs)
-        
-        if not n_hairs:
-            return img
-        
-        height, width, _ = img.shape  # target image width and height
-        hair_images = [im for im in os.listdir(self.hairs_folder) if 'png' in im]
-        
-        for _ in range(n_hairs):
-            hair = cv2.imread(os.path.join(self.hairs_folder, random.choice(hair_images)))
-            hair = cv2.flip(hair, random.choice([-1, 0, 1]))
-            hair = cv2.rotate(hair, random.choice([0, 1, 2]))
-
-            h_height, h_width, _ = hair.shape  # hair image width and height
-            roi_ho = random.randint(0, img.shape[0] - hair.shape[0])
-            roi_wo = random.randint(0, img.shape[1] - hair.shape[1])
-            roi = img[roi_ho:roi_ho + h_height, roi_wo:roi_wo + h_width]
-
-            # Creating a mask and inverse mask
-            img2gray = cv2.cvtColor(hair, cv2.COLOR_BGR2GRAY)
-            ret, mask = cv2.threshold(img2gray, 10, 255, cv2.THRESH_BINARY)
-            mask_inv = cv2.bitwise_not(mask)
-
-            # Now black-out the area of hair in ROI
-            img_bg = cv2.bitwise_and(roi, roi, mask=mask_inv)
-
-            # Take only region of hair from hair image.
-            hair_fg = cv2.bitwise_and(hair, hair, mask=mask)
-
-            # Put hair in ROI and modify the target image
-            dst = cv2.add(img_bg, hair_fg)
-
-            img[roi_ho:roi_ho + h_height, roi_wo:roi_wo + h_width] = dst
-                
-        return img
-
-    def __repr__(self):
-        return f'{self.__class__.__name__}(hairs={self.hairs}, hairs_folder="{self.hairs_folder}")'
-
-class DrawHair:
-    """
-    Draw a random number of pseudo hairs
-
-    Args:
-        hairs (int): maximum number of hairs to draw
-        width (tuple): possible width of the hair in pixels
-    """
-
-    def __init__(self, hairs:int = 4, width:tuple = (1, 2)):
-        self.hairs = hairs
-        self.width = width
-
-    def __call__(self, img):
-        """
-        Args:
-            img (PIL Image): Image to draw hairs on.
-
-        Returns:
-            PIL Image: Image with drawn hairs.
-        """
-        if not self.hairs:
-            return img
-        
-        width, height, _ = img.shape
-        
-        for _ in range(random.randint(0, self.hairs)):
-            # The origin point of the line will always be at the top half of the image
-            origin = (random.randint(0, width), random.randint(0, height // 2))
-            # The end of the line 
-            end = (random.randint(0, width), random.randint(0, height))
-            color = (0, 0, 0)  # color of the hair. Black.
-            cv2.line(img, origin, end, color, random.randint(self.width[0], self.width[1]))
-        
-        return img
-
-    def __repr__(self):
-        return f'{self.__class__.__name__}(hairs={self.hairs}, width={self.width})'
-
-class Microscope:
-    """
-    Cutting out the edges around the center circle of the image
-    Imitating a picture, taken through the microscope
-
-    Args:
-        p (float): probability of applying an augmentation
-    """
-
-    def __init__(self, p: float = 0.5):
-        self.p = p
-
-    def __call__(self, img):
-        """
-        Args:
-            img (PIL Image): Image to apply transformation to.
-
-        Returns:
-            PIL Image: Image with transformation.
-        """
-        if random.random() < self.p:
-            circle = cv2.circle((np.ones(img.shape) * 255).astype(np.uint8), # image placeholder
-                        (img.shape[0]//2, img.shape[1]//2), # center point of circle
-                        random.randint(img.shape[0]//2 - 3, img.shape[0]//2 + 15), # radius
-                        (0, 0, 0), # color
-                        -1)
-
-            mask = circle - 255
-            img = np.multiply(img, mask)
-        
-        return img
-
-    def __repr__(self):
-        return f'{self.__class__.__name__}(p={self.p})'
 
 
 class CustomDataset(Dataset):
@@ -520,7 +375,7 @@ class Synth_Dataset(Dataset):
     def __getitem__(self, idx): 
         idx = self.id_list[idx]
 
-        image_fn = self.input_images[idx]   #f'{idx:04d}_{idx%2}'
+        image_fn = self.input_images[idx]
 
         img = np.array(Image.open(image_fn))
         target = int(image_fn.split('_')[-1].replace('.jpg',''))  
@@ -529,7 +384,6 @@ class Synth_Dataset(Dataset):
             img = self.transform(img)
 
         return torch.tensor(img, dtype=torch.float32), torch.tensor(target, dtype=torch.float32)
-
 
 
 def load_model(model = 'efficientnet-b2'):

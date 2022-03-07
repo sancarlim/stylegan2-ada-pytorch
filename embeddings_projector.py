@@ -35,6 +35,7 @@ def select_n_random(data, labels, n=100):
 parser = ArgumentParser()
 parser.add_argument("--use_cnn", action='store_true', help='retrieve features from the last layer of EfficientNet B2')
 parser.add_argument("--sprite", action='store_true')
+parser.add_argument("--model_path", type=str, help='path to trained classifier based on EfficientNet-B2')
 args = parser.parse_args()
 
 
@@ -55,7 +56,7 @@ if args.use_cnn:
     arch = EfficientNet.from_pretrained('efficientnet-b2')
     model = Net(arch=arch, return_feats=True)  
     # summary(model, (3, 256, 256), device='cpu')
-    model.load_state_dict(torch.load('/workspace/stylegan2-ada-pytorch/CNN_trainings/melanoma_model_0_0.9672_16_12_onlysyn.pth'))
+    model.load_state_dict(torch.load(args.model_path))
 
     model.eval()
     model.to(device)
