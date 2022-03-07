@@ -12,7 +12,7 @@ import torchvision
 import pandas as pd
 import seaborn as sb
 import datetime
-from sklearn.model_selection import StratifiedKFold, GroupKFold, train_test_split
+from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score, roc_auc_score, confusion_matrix, f1_score
 
 from pathlib import Path
@@ -289,6 +289,28 @@ def PreprocessImages(images):
     images = torch.tensor(images, dtype=torch.float32)
     images = transformer.forward(images).to('cuda')
     return images.requires_grad_(True)
+
+
+
+def create_split(source_dir, n_b, n_m):     
+    # Split synthetic dataset  
+    input_images = [str(f) for f in sorted(Path(source_dir).rglob('*')) if os.path.isfile(f)]
+    
+    ind_0, ind_1 = [], []
+    for i, f in enumerate(input_images):
+        if f.split('.')[0][-1] == '0':
+            ind_0.append(i)
+        else:
+            ind_1.append(i)  
+    
+    train_id_list, val_id_list  = ind_0[:round(len(ind_0)*0.8)],  ind_0[round(len(ind_0)*0.8):]       #ind_0[round(len(ind_0)*0.6):round(len(ind_0)*0.8)] ,
+    train_id_1, val_id_1 = ind_1[:round(len(ind_1)*0.8)],  ind_1[round(len(ind_1)*0.8):] #ind_1[round(len(ind_1)*0.6):round(len(ind_1)*0.8)] ,
+    
+    train_id_list = np.append(train_id_list, train_id_1)
+    val_id_list =   np.append(val_id_list, val_id_1)    
+    
+    return train_id_list, val_id_list  #test_id_list
+    
 
 def load_isic_data(path):
     # ISIC dataset 

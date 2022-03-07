@@ -14,7 +14,7 @@ from scipy.spatial import distance
 import numpy as np
 import matplotlib.pyplot as plt
 
-metadata = csv.reader(open("/workspace/stylegan2-ada-pytorch/CNN_embeddings_projector/projections_vs_reals/00000/default/metadata.tsv"), delimiter="\t")
+metadata = list(csv.reader(open("/workspace/stylegan2-ada-pytorch/CNN_embeddings_projector/projections_vs_reals_nosprite/00000/default/metadata.tsv"), delimiter="\t"))
 embeddings = list(csv.reader(open("/workspace/stylegan2-ada-pytorch/CNN_embeddings_projector/projections_vs_reals_nosprite/00000/default/tensors.tsv"), delimiter="\t"))
 
 #embeddings already ordered from x1, to x1, from x2, to x2 ....
@@ -35,3 +35,5 @@ Q2 = np.quantile(distances, 0.5)
 Q3 = np.quantile(distances, 0.75)
 his = plt.hist(distances)
 distances_indeces_ordered = np.argsort(distances) 
+indeces_min_distance = distances_indeces_ordered[:2] # index = img name img0000idx.class.x.from.png
+
