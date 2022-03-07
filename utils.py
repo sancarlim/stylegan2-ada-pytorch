@@ -240,7 +240,6 @@ def confussion_matrix(test, test_pred, test_accuracy, writer_path):
     plt.show()
 
     now=datetime.datetime.now()
-    # writer.add_image('conf_matrix', fig)
     plt.savefig(os.path.join(writer_path, f'conf_matrix_{test_accuracy:.4f}_{now.strftime("%d_%m_%H_%M")}.png'))
 
 
@@ -320,6 +319,24 @@ def load_synthetic_data(syn_data_path, synt_n_imgs, only_syn=False):
     
     return train_df 
 
+def create_split(source_dir, n_b, n_m):     
+    # Split synthetic dataset  
+    input_images = [str(f) for f in sorted(Path(source_dir).rglob('*')) if os.path.isfile(f)]
+
+    ind_0, ind_1 = [], []
+    for i, f in enumerate(input_images):
+        if f.split('.')[0][-1] == '0':
+            ind_0.append(i)
+        else:
+            ind_1.append(i)  
+
+    train_id_list, val_id_list  = ind_0[:round(len(ind_0)*0.8)],  ind_0[round(len(ind_0)*0.8):]
+    train_id_1, val_id_1 = ind_1[:round(len(ind_1)*0.8)],  ind_1[round(len(ind_1)*0.8):]
+
+    train_id_list = np.append(train_id_list, train_id_1)
+    val_id_list =   np.append(val_id_list, val_id_1)    
+
+    return train_id_list, val_id_list  #test_id_list
 
 class CustomDataset(Dataset):
     def __init__(self, df: pd.DataFrame, train: bool = True, transforms= None):
