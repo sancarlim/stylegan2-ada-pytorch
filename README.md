@@ -54,7 +54,7 @@ Datasets are stored as uncompressed ZIP archives containing uncompressed PNG fil
 
 Custom datasets can be created from a folder containing images; see [`python dataset_tool.py --help`](./docs/dataset-tool-help.txt) for more information. Alternatively, the folder can also be used directly as a dataset, without running it through `dataset_tool.py` first, but doing so may lead to suboptimal performance.
 
-**ISIC 2020**: Download the [ISIC 2020 dataset](https://www.kaggle.com/c/siim-isic-melanoma-classification) and create ZIP archive:
+**ISIC 2020**: Download the [ISIC 2020 dataset](https://www.kaggle.com/nroman/melanoma-external-malignant-256) and create ZIP archive:
 
 ```.bash
 python dataset_tool.py --source=/tmp/isic-dataset --dest=~/datasets/isic256x256.zip --width=256 --height=256
@@ -145,6 +145,21 @@ The above command saves the projection target `out/target.png`, result `out/proj
 python generate.py --outdir=out --projected_w=out/projected_w.npz \
     --class=1 --network=~/pretrained/conditionalGAN.pkl
 ```
+
+## Classification with EfficientNet-B2
+
+In our studies generated synthetic images were used in binary classification task between melanoma and non-melanoma cases. To run training with Efficientnet-B2 use following command:
+
+```.bash
+python melanoma_classifier.py --syn_data_path=~/generated/  \
+    --real_data_path=~/melanoma-external-malignant-256/ \
+    --synt_n_imgs="0,15"
+```
+
+In above example `--syn_data_path` argument indicates path for synthetic images,
+`--real_data_path` - real images and `--synt_n_imgs` stands for n non-melanoma, k melanoma synthetic images (measured in kimg) to add to the real data. We reported our studis using wandb (use `--wandb_flag` argument to report accuracy and loss for your own experiments). `--only_reals` flag enable training only for real images, while `--only_syn` will allow to take all artificial images from directory with synthetic images.
+
+To make a diagnosis using trained model use [`predict.py`](predict.py) script.
 
 ## Measuring authenticity
 
