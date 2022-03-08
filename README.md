@@ -1,4 +1,5 @@
 ## StyleGAN2-ADA for generation of synthetic skin lesions
+![Teaser image](./docs/stylegan2ada-moles.gif)
 
 The usage of healthcare data in the development of artificial intelligence (AI) models is associated with issues around personal integrity and regulations. Patient data can usually not be freely shared and thus, the utility of it in creating AI solutions is limited. The main goal of the project was to explore GANs to generate synthetic data of skin lesions and test the performance of DL models train on that type of data in comparison to trained only on real one.
 
@@ -45,60 +46,7 @@ docker build --tag sg2ada:latest .
     --network=https://nvlabs-fi-cdn.nvidia.com/stylegan2-ada-pytorch/pretrained/metfaces.pkl
 ```
 
-Note: The Docker image requires NVIDIA driver release `r455.23` or later.
-
-**Legacy networks**: The above commands can load most of the network pickles created using the previous TensorFlow versions of StyleGAN2 and StyleGAN2-ADA. However, for future compatibility, we recommend converting such legacy pickles into the new format used by the PyTorch version:
-
-```.bash
-python legacy.py \
-    --source=https://nvlabs-fi-cdn.nvidia.com/stylegan2/networks/stylegan2-cat-config-f.pkl \
-    --dest=stylegan2-cat-config-f.pkl
-```
-
-## Projecting images to latent space
-
-To find the matching latent vector for a given image file, run:
-
-```.bash
-python projector.py --outdir=out --target=~/mytargetimg.png \
-    --class_label=1 --network=~/pretrained/conditionalGAN.pkl
-```
-
-For optimal results, the target image should be cropped and aligned similar to the [FFHQ dataset](https://github.com/NVlabs/ffhq-dataset). The above command saves the projection target `out/target.png`, result `out/proj.png`, latent vector `out/projected_w.npz`, and progression video `out/proj.mp4`. You can render the resulting latent vector by specifying `--projected_w` for `generate.py` for specific melanoma class:
-
-```.bash
-python generate.py --outdir=out --projected_w=out/projected_w.npz \
-    --class=1 --network=https://nvlabs-fi-cdn.nvidia.com/stylegan2-ada-pytorch/pretrained/ffhq.pkl
-```
-
-## Using networks from Python
-
-You can use pre-trained networks in your own Python code as follows:
-
-```.python
-with open('ffhq.pkl', 'rb') as f:
-    G = pickle.load(f)['G_ema'].cuda()  # torch.nn.Module
-z = torch.randn([1, G.z_dim]).cuda()    # latent codes
-c = None                                # class labels (not used in this example)
-img = G(z, c)                           # NCHW, float32, dynamic range [-1, +1]
-```
-
-The above code requires `torch_utils` and `dnnlib` to be accessible via `PYTHONPATH`. It does not need source code for the networks themselves &mdash; their class definitions are loaded from the pickle via `torch_utils.persistence`.
-
-The pickle contains three networks. `'G'` and `'D'` are instantaneous snapshots taken during training, and `'G_ema'` represents a moving average of the generator weights over several training steps. The networks are regular instances of `torch.nn.Module`, with all of their parameters and buffers placed on the CPU at import and gradient computation disabled by default.
-
-The generator consists of two submodules, `G.mapping` and `G.synthesis`, that can be executed separately. They also support various additional options:
-
-```.python
-w = G.mapping(z, c, truncation_psi=0.5, truncation_cutoff=8)
-img = G.synthesis(w, noise_mode='const', force_fp32=True)
-```
-
-Please refer to [`generate.py`](./generate.py), [`style_mixing.py`](./style_mixing.py), and [`projector.py`](./projector.py) for further examples.
-
-```.bash
-python generate.py --outdir=out --seeds=0-35 --class=1	--network=/path/network.pkl
-```
+Note: See [`docker_run.sh`](./docker_run.sh) for more information.
 
 ## Preparing datasets
 
@@ -112,7 +60,7 @@ Custom datasets can be created from a folder containing images; see [`python dat
 python dataset_tool.py --source=/tmp/isic-dataset --dest=~/datasets/isic256x256.zip --width=256 --height=256
 ```
 
-## Training new networks
+## Training new networks - NVIDIA resources
 
 In its most basic form, training new networks boils down to:
 
@@ -139,7 +87,7 @@ The training configuration can be further customized with additional command lin
 
 Please refer to [`python train.py --help`](./docs/train-help.txt) for the full list.
 
-## Expected training time
+## Expected training time - NVIDIA resources
 
 The total training time depends heavily on resolution, number of GPUs, dataset, desired quality, and hyperparameters. The following table lists expected wallclock times to reach different points in the training, measured in thousands of real images shown to the discriminator ("kimg"):
 
@@ -168,7 +116,7 @@ In typical cases, 25000 kimg or more is needed to reach convergence, but the res
 
 ![Training curves](./docs/stylegan2-ada-training-curves.png)
 
-Note: `--cfg=auto` serves as a reasonable first guess for the hyperparameters but it does not necessarily lead to optimal results for a given dataset. For example, `--cfg=stylegan2` yields considerably better FID  for FFHQ-140k at 1024x1024 than illustrated above. We recommend trying out at least a few different values of `--gamma` for each new dataset.
+Note: `--cfg=auto` serves as a reasonable first guess for the hyperparameters but it does not necessarily lead to optimal results for a given dataset. We recommend trying out at least a few different values of `--gamma` for each new dataset.
 
 ## Quality metrics
 
@@ -178,46 +126,35 @@ Additional quality metrics can also be computed after the training:
 
 ```.bash
 # Previous training run: look up options automatically, save result to JSONL file.
-python calc_metrics.py --metrics=pr50k3_full \
-    --network=~/training-runs/00000-ffhq10k-res64-auto1/network-snapshot-000000.pkl
-
-# Pre-trained network pickle: specify dataset explicitly, print result to stdout.
-python calc_metrics.py --metrics=fid50k_full --data=~/datasets/ffhq.zip --mirror=1 \
-    --network=https://nvlabs-fi-cdn.nvidia.com/stylegan2-ada-pytorch/pretrained/ffhq.pkl
+python calc_metrics.py --metrics="fid50k_full,kid50k_full,pr50k3_full,ppl2_wend" \
+    --mirror=1 --data=~/datasets/isic256x256.zip --network=~/network-snapshot-000000.pkl
 ```
 
-The first example looks up the training configuration and performs the same operation as if `--metrics=pr50k3_full` had been specified during training. The second example downloads a pre-trained network pickle, in which case the values of `--mirror` and `--data` must be specified explicitly.
+## Projecting images to latent space
 
-Note that many of the metrics have a significant one-off cost when calculating them for the first time for a new dataset (up to 30min). Also note that the evaluation is done using a different random seed each time, so the results will vary if the same metric is computed multiple times.
+To find the matching latent vector for a given image file, run:
 
-We employ the following metrics in the ADA paper. Execution time and GPU memory usage is reported for one NVIDIA Tesla V100 GPU at 1024x1024 resolution:
+```.bash
+python projector.py --outdir=out --target=~/mytargetimg.png \
+    --class_label=1 --network=~/pretrained/conditionalGAN.pkl
+```
 
-| Metric        | Time   | GPU mem | Description |
-| :-----        | :----: | :-----: | :---------- |
-| `fid50k_full` | 13 min | 1.8 GB  | Fr&eacute;chet inception distance<sup>[1]</sup> against the full dataset
-| `kid50k_full` | 13 min | 1.8 GB  | Kernel inception distance<sup>[2]</sup> against the full dataset
-| `pr50k3_full` | 13 min | 4.1 GB  | Precision and recall<sup>[3]</sup> againt the full dataset
-| `is50k`       | 13 min | 1.8 GB  | Inception score<sup>[4]</sup> for CIFAR-10
+The above command saves the projection target `out/target.png`, result `out/proj.png`, latent vector `out/projected_w.npz`, and progression video `out/proj.mp4`. You can render the resulting latent vector by specifying `--projected_w` for `generate.py` for specific melanoma class:
 
-In addition, the following metrics from the [StyleGAN](https://github.com/NVlabs/stylegan) and [StyleGAN2](https://github.com/NVlabs/stylegan2) papers are also supported:
+```.bash
+python generate.py --outdir=out --projected_w=out/projected_w.npz \
+    --class=1 --network=~/pretrained/conditionalGAN.pkl
+```
 
-| Metric        | Time   | GPU mem | Description |
-| :------------ | :----: | :-----: | :---------- |
-| `fid50k`      | 13 min | 1.8 GB  | Fr&eacute;chet inception distance against 50k real images
-| `kid50k`      | 13 min | 1.8 GB  | Kernel inception distance against 50k real images
-| `pr50k3`      | 13 min | 4.1 GB  | Precision and recall against 50k real images
-| `ppl2_wend`   | 36 min | 2.4 GB  | Perceptual path length<sup>[5]</sup> in W, endpoints, full image
-| `ppl_zfull`   | 36 min | 2.4 GB  | Perceptual path length in Z, full paths, cropped image
-| `ppl_wfull`   | 36 min | 2.4 GB  | Perceptual path length in W, full paths, cropped image
-| `ppl_zend`    | 36 min | 2.4 GB  | Perceptual path length in Z, endpoints, cropped image
-| `ppl_wend`    | 36 min | 2.4 GB  | Perceptual path length in W, endpoints, cropped image
+## Measuring authenticity
 
-References:
-1. [GANs Trained by a Two Time-Scale Update Rule Converge to a Local Nash Equilibrium](https://arxiv.org/abs/1706.08500), Heusel et al. 2017
-2. [Demystifying MMD GANs](https://arxiv.org/abs/1801.01401), Bi&nacute;kowski et al. 2018
-3. [Improved Precision and Recall Metric for Assessing Generative Models](https://arxiv.org/abs/1904.06991), Kynk&auml;&auml;nniemi et al. 2019
-4. [Improved Techniques for Training GANs](https://arxiv.org/abs/1606.03498), Salimans et al. 2016
-5. [A Style-Based Generator Architecture for Generative Adversarial Networks](https://arxiv.org/abs/1812.04948), Karras et al. 2018
+We additionaly calculated cosine distance between embeddings from tsv file.
+For details see [read_tsv.py`](./CNN_embeddings_projector/read_tsv.py).
+
+```.bash
+python ./CNN_embeddings_projector/read_tsv.py --metadata=metadata.tsv \
+    --embeddings_path=tensors.tsv --save_path=distances.txt
+```
 
 ## License
 
