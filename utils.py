@@ -12,8 +12,8 @@ import torchvision
 import pandas as pd
 import seaborn as sb
 import datetime
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import confusion_matrix
+from sklearn.model_selection import train_test_split 
+from sklearn.metrics import accuracy_score, roc_auc_score, confusion_matrix, f1_score 
 
 from pathlib import Path
 import random

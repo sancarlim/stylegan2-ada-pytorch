@@ -1,6 +1,9 @@
-# Last Modified   : 22.01.2022
-# By              : Sandra Carrasco <sandra.carrasco@ai.se>
 
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+# File       : predict.py
+# Modified   : 08.03.2022
+# By         : Sandra Carrasco <sandra.carrasco@ai.se> 
 import re
 import os
 from typing import List
