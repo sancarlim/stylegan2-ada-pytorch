@@ -161,10 +161,20 @@ In above example `--syn_data_path` argument indicates path for synthetic images,
 
 To make a diagnosis using trained model use [`predict.py`](predict.py) script.
 
+
+## Visualizing the latent space
+[`embeddings_projector.py`](https://github.com/aidotse/stylegan2-ada-pytorch/blob/main/embeddings_projector.py) performs the two following tasks:
+
+* Project embeddings of a CNN used as feature extractor. (`--use_cnn`)
+
+* Project w-vectors.
+
+This generates a `metadata.tsv`, `tensors.tsv` and (optionally using `--sprite` flag) a sprite of the images. These files can be uploaded in the [Tensorboard Projector](https://www.tensorflow.org/tensorboard/tensorboard_projector_plugin) , which graphically represent these embeddings.
+
 ## Measuring authenticity
 
-We additionaly calculated cosine distance between embeddings from tsv file.
-For details see [read_tsv.py`](./CNN_embeddings_projector/read_tsv.py).
+We additionaly calculated cosine distances between the CNN embeddings from the tsv file.
+For details see [`read_tsv.py`](./CNN_embeddings_projector/read_tsv.py).
 
 ```.bash
 python ./CNN_embeddings_projector/read_tsv.py --metadata=metadata.tsv \
