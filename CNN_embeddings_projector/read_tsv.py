@@ -11,7 +11,6 @@ import numpy as np
 import matplotlib.pyplot as plt
 from argparse import ArgumentParser
 
-
 if __name__ == '__main__':
     parser = ArgumentParser()
     parser.add_argument("--metadata", type=str,

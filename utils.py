@@ -311,7 +311,6 @@ def PreprocessImages(images):
     images = transformer.forward(images).to('cuda')
     return images.requires_grad_(True)
 
-
 def load_isic_data(path):
     # ISIC dataset
     df = pd.read_csv(os.path.join(path, 'train_concat.csv'))
